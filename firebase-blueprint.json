@@ -1,0 +1,116 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information and roles",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["client", "admin"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "context": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Plan": {
+      "title": "Plan",
+      "description": "Website building plans",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "price": { "type": "number" },
+        "description": { "type": "string" },
+        "features": { "type": "array", "items": { "type": "string" } },
+        "targetAudience": { "type": "string" },
+        "demoUrl": { "type": "string" }
+      },
+      "required": ["id", "name", "price"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Client orders for website plans",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clientId": { "type": "string" },
+        "planId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "in-progress", "completed", "cancelled"] },
+        "designBrief": { "type": "string" },
+        "amount": { "type": "number" },
+        "discountCode": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "siteUrl": { "type": "string" },
+        "adminUrl": { "type": "string" }
+      },
+      "required": ["id", "clientId", "planId", "status"]
+    },
+    "Demo": {
+      "title": "Demo",
+      "description": "Demo sites to showcase work",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "url": { "type": "string" },
+        "description": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "url"]
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "Admin announcements for all users",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "content"]
+    },
+    "DiscountCode": {
+      "title": "DiscountCode",
+      "description": "Promotional discount codes",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "percentage": { "type": "number" },
+        "active": { "type": "boolean" },
+        "expiresAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["code", "percentage", "active"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/plans/{planId}": {
+      "schema": "Plan",
+      "description": "Available website plans"
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Customer orders"
+    },
+    "/announcements/{announcementId}": {
+      "schema": "Announcement",
+      "description": "Global announcements"
+    },
+    "/discountCodes/{code}": {
+      "schema": "DiscountCode",
+      "description": "Discount codes"
+    },
+    "/demos/{demoId}": {
+      "schema": "Demo",
+      "description": "Demo sites"
+    }
+  }
+}
