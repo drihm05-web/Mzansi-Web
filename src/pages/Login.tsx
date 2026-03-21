@@ -108,7 +108,16 @@ export default function Login() {
 
       navigate('/dashboard');
     } catch (err: any) {
-      setError(err.message || 'Failed to sign in with Google');
+      console.error("Google Sign-In error:", err);
+      if (err.code === 'auth/unauthorized-domain') {
+        setError('Unauthorized domain. Please add your Vercel domain to the "Authorized domains" list in the Firebase Console (Authentication > Settings).');
+      } else if (err.code === 'auth/popup-closed-by-user') {
+        setError('Sign-in popup was closed before completion.');
+      } else if (err.message && (err.message.includes('offline') || err.message.includes('client is offline'))) {
+        setError('Firestore is offline. This usually means your Firebase configuration (Project ID or Database ID) is incorrect or the database is not provisioned. Please check your firebase-applet-config.json.');
+      } else {
+        setError(err.message || 'Failed to sign in with Google');
+      }
     } finally {
       setLoading(false);
     }

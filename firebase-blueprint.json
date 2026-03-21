@@ -85,9 +85,26 @@
         "expiresAt": { "type": "string", "format": "date-time" }
       },
       "required": ["code", "percentage", "active"]
+    },
+    "PaymentSettings": {
+      "title": "PaymentSettings",
+      "description": "EFT and payment instructions settings",
+      "type": "object",
+      "properties": {
+        "bankName": { "type": "string" },
+        "accountNumber": { "type": "string" },
+        "accountHolder": { "type": "string" },
+        "branchCode": { "type": "string" },
+        "instructions": { "type": "string" }
+      },
+      "required": ["bankName", "accountNumber", "accountHolder"]
     }
   },
   "firestore": {
+    "/settings/{settingId}": {
+      "schema": "PaymentSettings",
+      "description": "Global app settings"
+    },
     "/users/{userId}": {
       "schema": "User",
       "description": "User profiles"

@@ -46,7 +46,10 @@ export default function AdminPanel() {
     const unsubscribeOrders = onSnapshot(ordersQuery, (snapshot) => {
       setOrders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order)));
       setLoading(false);
-    }, (err) => handleFirestoreError(err, OperationType.LIST, 'orders'));
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, 'orders');
+      setLoading(false);
+    });
 
     const unsubscribeUsers = onSnapshot(usersQuery, (snapshot) => {
       setUsers(snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile)));

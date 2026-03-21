@@ -42,13 +42,22 @@ export default function Dashboard() {
     );
 
     const unsubscribeOrders = onSnapshot(ordersQuery, (snapshot) => {
+      console.log('Orders snapshot received, count:', snapshot.size);
       setOrders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order)));
       setLoading(false);
-    }, (err) => handleFirestoreError(err, OperationType.LIST, 'orders'));
+    }, (err) => {
+      console.error('Orders snapshot error:', err);
+      handleFirestoreError(err, OperationType.LIST, 'orders');
+      setLoading(false);
+    });
 
     const unsubscribeAnnouncements = onSnapshot(announcementsQuery, (snapshot) => {
+      console.log('Announcements snapshot received, count:', snapshot.size);
       setAnnouncements(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Announcement)));
-    }, (err) => handleFirestoreError(err, OperationType.LIST, 'announcements'));
+    }, (err) => {
+      console.error('Announcements snapshot error:', err);
+      handleFirestoreError(err, OperationType.LIST, 'announcements');
+    });
 
     return () => {
       unsubscribeOrders();

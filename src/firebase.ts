@@ -1,24 +1,29 @@
-import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
-import { getAuth, Auth } from 'firebase/auth';
-import { initializeFirestore, Firestore } from 'firebase/firestore';
+import { initializeApp } from 'firebase/app';
+import { getAuth } from 'firebase/auth';
+import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
-// 1. Singleton pattern: Prevents "Firebase App named '[DEFAULT]' already exists"
-// This stops the site from slowing down or crashing on redeploys/refreshes.
-const app: FirebaseApp = getApps().length > 0 
-  ? getApp() 
-  : initializeApp(firebaseConfig);
+const app = initializeApp(firebaseConfig);
+// Use the database ID from config if present, otherwise default
+export const db = getFirestore(app, (firebaseConfig as any).firestoreDatabaseId || '(default)');
+export const auth = getAuth(app);
 
-// 2. Optimized Firestore initialization for Vercel
-// Using 'experimentalForceLongPolling' fixes the "Client is offline" error
-// by using a more stable connection method than default WebSockets.
-export const db: Firestore = initializeFirestore(app, {
-  experimentalForceLongPolling: true,
-});
+// Test connection to Firestore
+async function testConnection() {
+  try {
+    // Attempt to fetch a non-existent document from the server to test connectivity
+    await getDocFromServer(doc(db, '_connection_test_', 'test'));
+    console.log("Firestore connection test successful.");
+  } catch (error: any) {
+    if (error.message && (error.message.includes('the client is offline') || error.message.includes('offline'))) {
+      console.error("CRITICAL: Firestore is offline. This usually means the Firebase configuration (Project ID or Database ID) is incorrect or the database is not provisioned.");
+      // We can't easily show a UI alert from here, but we can log it clearly
+    }
+    // Other errors (like permission denied) are fine for a connection test
+  }
+}
 
-export const auth: Auth = getAuth(app);
-
-// --- Error Handling Utilities ---
+testConnection();
 
 export enum OperationType {
   CREATE = 'create',
@@ -66,9 +71,7 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     },
     operationType,
     path
-  };
-  
-  console.error('Firestore Error details:', errInfo);
-  // Throwing a standard error string so your UI can display it easily
-  throw new Error(`Firestore ${operationType} failed: ${errInfo.error}`);
+  }
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
 }
