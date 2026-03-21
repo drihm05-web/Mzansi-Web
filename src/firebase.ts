@@ -1,11 +1,24 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
+import { getAuth, Auth } from 'firebase/auth';
+import { initializeFirestore, Firestore } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-export const auth = getAuth(app);
+// 1. Singleton pattern: Prevents "Firebase App named '[DEFAULT]' already exists"
+// This stops the site from slowing down or crashing on redeploys/refreshes.
+const app: FirebaseApp = getApps().length > 0 
+  ? getApp() 
+  : initializeApp(firebaseConfig);
+
+// 2. Optimized Firestore initialization for Vercel
+// Using 'experimentalForceLongPolling' fixes the "Client is offline" error
+// by using a more stable connection method than default WebSockets.
+export const db: Firestore = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+});
+
+export const auth: Auth = getAuth(app);
+
+// --- Error Handling Utilities ---
 
 export enum OperationType {
   CREATE = 'create',
@@ -53,7 +66,9 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     },
     operationType,
     path
-  }
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  };
+  
+  console.error('Firestore Error details:', errInfo);
+  // Throwing a standard error string so your UI can display it easily
+  throw new Error(`Firestore ${operationType} failed: ${errInfo.error}`);
 }
