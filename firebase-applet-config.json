@@ -2,7 +2,7 @@
   "apiKey": "AIzaSyAdZMvvI68NLrHqeHID75JicPFMaYOxSfQ",
   "authDomain": "mzansi-web.vercel.app",
   "projectId": "gen-lang-client-0452990580",
-  "storageBucke: "gen-lang-client-0452990580.firebasestorage.app",
+  "storageBucket": "gen-lang-client-0452990580.firebasestorage.app",
   "messagingSenderId": "858904336407",
  "appId": "1:858904336407:web:f29a3ce25bec8525b0e452"
 }
