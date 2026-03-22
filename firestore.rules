@@ -68,6 +68,21 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    match /userStats/{statId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow write: if isAdmin();
+    }
+
+    match /quotes/{quoteId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.clientId == request.auth.uid);
+      allow write: if isAdmin();
+    }
+
+    match /emailLogs/{logId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
     match /plans/{planId} {
       allow read: if true;
       allow write: if isAdmin();

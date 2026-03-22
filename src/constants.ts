@@ -5,6 +5,9 @@ export const PLANS: Plan[] = [
     id: 'startup',
     name: 'Startup (Basic)',
     price: 999,
+    monthlyFee: 199,
+    managementFee: 99,
+    securityFee: 50,
     description: 'Perfect for small local businesses and personal portfolios.',
     features: [
       '1 Page Responsive Design',
@@ -21,6 +24,9 @@ export const PLANS: Plan[] = [
     id: 'business',
     name: 'Business (Professional)',
     price: 2999,
+    monthlyFee: 499,
+    managementFee: 249,
+    securityFee: 150,
     description: 'Ideal for growing companies needing a robust online presence.',
     features: [
       'Up to 5 Pages',
@@ -38,6 +44,9 @@ export const PLANS: Plan[] = [
     id: 'enterprise',
     name: 'Enterprise (Custom)',
     price: 7999,
+    monthlyFee: 1499,
+    managementFee: 749,
+    securityFee: 450,
     description: 'Full-scale custom solutions for large organizations.',
     features: [
       'Unlimited Pages',

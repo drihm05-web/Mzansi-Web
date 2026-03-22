@@ -1,3 +1,7 @@
+import { useState, useEffect } from 'react';
+import { collection, query, onSnapshot, orderBy } from 'firebase/firestore';
+import { db, handleFirestoreError, OperationType } from '../firebase';
+import { Plan } from '../types';
 import { motion } from 'motion/react';
 import { Shield, ShieldCheck, Zap, Users, ArrowRight, CheckCircle2, Globe, Lock, Clock } from 'lucide-react';
 import { PLANS, STATS } from '../constants';
@@ -5,6 +9,22 @@ import { useNavigate } from 'react-router-dom';
 
 export default function LandingPage() {
   const navigate = useNavigate();
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const q = query(collection(db, 'plans'), orderBy('price', 'asc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const plansData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Plan));
+      setPlans(plansData);
+      setLoading(false);
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, 'plans');
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   return (
     <div className="overflow-hidden">
@@ -145,60 +165,70 @@ export default function LandingPage() {
           </div>
 
           <div className="grid md:grid-cols-3 gap-8">
-            {PLANS.map((plan, i) => (
-              <motion.div 
-                key={plan.id}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.1 }}
-                className={`relative p-8 rounded-3xl border ${plan.id === 'business' ? 'border-emerald-500 shadow-xl ring-4 ring-emerald-500/5' : 'border-zinc-200'} bg-white flex flex-col`}
-              >
-                {plan.id === 'business' && (
-                  <span className="absolute -top-4 left-1/2 -translate-x-1/2 bg-emerald-500 text-white px-4 py-1 rounded-full text-xs font-bold uppercase tracking-widest">
-                    Most Popular
-                  </span>
-                )}
-                <div className="mb-8">
-                  <h3 className="text-xl font-bold text-zinc-900 mb-2">{plan.name}</h3>
-                  <div className="flex items-baseline mb-4">
-                    <span className="text-4xl font-bold text-zinc-900">R{plan.price}</span>
-                    <span className="text-zinc-500 ml-2">once-off</span>
-                  </div>
-                  <p className="text-zinc-600 text-sm leading-relaxed">{plan.description}</p>
-                </div>
-                <ul className="space-y-4 mb-10 flex-grow">
-                  {plan.features.map((feature, j) => (
-                    <li key={j} className="flex items-start text-sm text-zinc-600">
-                      <CheckCircle2 className="w-5 h-5 text-emerald-500 mr-3 flex-shrink-0" />
-                      {feature}
-                    </li>
-                  ))}
-                </ul>
-                <div className="space-y-3">
-                  <button 
-                    onClick={() => navigate(`/order/${plan.id}`)}
-                    className={`w-full py-4 rounded-2xl font-bold transition-all ${
-                      plan.id === 'business' 
-                        ? 'bg-emerald-600 text-white hover:bg-emerald-700' 
-                        : 'bg-zinc-900 text-white hover:bg-zinc-800'
-                    }`}
-                  >
-                    Choose {plan.name}
-                  </button>
-                  {plan.demoUrl && (
-                    <a 
-                      href={plan.demoUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-full py-3 rounded-2xl font-bold text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50 transition-all flex items-center justify-center text-sm"
-                    >
-                      <Globe className="w-4 h-4 mr-2" /> View Demo Site
-                    </a>
+            {loading ? (
+              <div className="col-span-full flex justify-center py-20">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600"></div>
+              </div>
+            ) : plans.length > 0 ? (
+              plans.map((plan, i) => (
+                <motion.div 
+                  key={plan.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: i * 0.1 }}
+                  className={`relative p-8 rounded-3xl border ${plan.id === 'business' ? 'border-emerald-500 shadow-xl ring-4 ring-emerald-500/5' : 'border-zinc-200'} bg-white flex flex-col`}
+                >
+                  {plan.id === 'business' && (
+                    <span className="absolute -top-4 left-1/2 -translate-x-1/2 bg-emerald-500 text-white px-4 py-1 rounded-full text-xs font-bold uppercase tracking-widest">
+                      Most Popular
+                    </span>
                   )}
-                </div>
-              </motion.div>
-            ))}
+                  <div className="mb-8">
+                    <h3 className="text-xl font-bold text-zinc-900 mb-2">{plan.name}</h3>
+                    <div className="flex items-baseline mb-4">
+                      <span className="text-4xl font-bold text-zinc-900">R{plan.price}</span>
+                      <span className="text-zinc-500 ml-2">once-off</span>
+                    </div>
+                    <p className="text-zinc-600 text-sm leading-relaxed">{plan.description}</p>
+                  </div>
+                  <ul className="space-y-4 mb-10 flex-grow">
+                    {plan.features.map((feature, j) => (
+                      <li key={j} className="flex items-start text-sm text-zinc-600">
+                        <CheckCircle2 className="w-5 h-5 text-emerald-500 mr-3 flex-shrink-0" />
+                        {feature}
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="space-y-3">
+                    <button 
+                      onClick={() => navigate(`/order/${plan.id}`)}
+                      className={`w-full py-4 rounded-2xl font-bold transition-all ${
+                        plan.id === 'business' 
+                          ? 'bg-emerald-600 text-white hover:bg-emerald-700' 
+                          : 'bg-zinc-900 text-white hover:bg-zinc-800'
+                      }`}
+                    >
+                      Choose {plan.name}
+                    </button>
+                    {plan.demoUrl && (
+                      <a 
+                        href={plan.demoUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full py-3 rounded-2xl font-bold text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50 transition-all flex items-center justify-center text-sm"
+                      >
+                        <Globe className="w-4 h-4 mr-2" /> View Demo Site
+                      </a>
+                    )}
+                  </div>
+                </motion.div>
+              ))
+            ) : (
+              <div className="col-span-full text-center py-20 text-zinc-500">
+                No plans available at the moment.
+              </div>
+            )}
           </div>
         </div>
       </section>

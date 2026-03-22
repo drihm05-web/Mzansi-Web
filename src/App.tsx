@@ -8,102 +8,10 @@ import Dashboard from './pages/Dashboard';
 import AdminPanel from './pages/AdminPanel';
 import OrderPage from './pages/OrderPage';
 import Demos from './pages/Demos';
-import { Shield, Menu, X, User, LogOut, LayoutDashboard, Settings, Globe, Bug, AlertTriangle } from 'lucide-react';
+import Profile from './pages/Profile';
+import { Shield, Menu, X, User, LogOut, LayoutDashboard, Settings, Globe } from 'lucide-react';
 import { useState } from 'react';
 import { auth } from './firebase';
-
-const DebugOverlay = () => {
-  const { user, profile, isAdmin, lastError, loading } = useAuth();
-  const [isVisible, setIsVisible] = useState(false);
-
-  if (!isVisible) {
-    return (
-      <button 
-        onClick={() => setIsVisible(true)}
-        className="fixed bottom-4 right-4 z-[100] bg-zinc-900/50 backdrop-blur-sm text-white p-3 rounded-full shadow-lg border border-white/10"
-      >
-        <Bug className="w-5 h-5" />
-      </button>
-    );
-  }
-
-  return (
-    <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md p-6 overflow-y-auto">
-      <div className="max-w-2xl mx-auto space-y-6">
-        <div className="flex justify-between items-center">
-          <h2 className="text-2xl font-bold text-white flex items-center">
-            <Bug className="w-6 h-6 mr-2 text-emerald-400" />
-            Mobile Debug Console
-          </h2>
-          <button onClick={() => setIsVisible(false)} className="text-zinc-400 hover:text-white">
-            <X className="w-8 h-8" />
-          </button>
-        </div>
-
-        <div className="grid gap-4">
-          <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-2xl space-y-2">
-            <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Auth Status</h3>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <p className="text-zinc-400">Loading:</p>
-                <p className={loading ? 'text-amber-400' : 'text-emerald-400'}>{loading ? 'True' : 'False'}</p>
-              </div>
-              <div>
-                <p className="text-zinc-400">User:</p>
-                <p className={user ? 'text-emerald-400' : 'text-red-400'}>{user ? 'Logged In' : 'Logged Out'}</p>
-              </div>
-              <div>
-                <p className="text-zinc-400">UID:</p>
-                <p className="text-zinc-300 font-mono text-[10px] break-all">{user?.uid || 'N/A'}</p>
-              </div>
-              <div>
-                <p className="text-zinc-400">Admin:</p>
-                <p className={isAdmin ? 'text-emerald-400' : 'text-zinc-500'}>{isAdmin ? 'Yes' : 'No'}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-2xl space-y-2">
-            <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Firestore Profile</h3>
-            {profile ? (
-              <pre className="text-[10px] text-emerald-400 overflow-x-auto">
-                {JSON.stringify(profile, null, 2)}
-              </pre>
-            ) : (
-              <p className="text-zinc-500 text-sm italic">No profile document loaded</p>
-            )}
-          </div>
-
-          <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-2xl space-y-2">
-            <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Last Error</h3>
-            {lastError ? (
-              <div className="flex items-start bg-red-500/10 border border-red-500/20 p-3 rounded-xl">
-                <AlertTriangle className="w-4 h-4 text-red-400 mr-2 shrink-0 mt-0.5" />
-                <p className="text-xs text-red-400 font-mono break-all">{lastError}</p>
-              </div>
-            ) : (
-              <p className="text-emerald-500 text-sm italic">No errors detected</p>
-            )}
-          </div>
-
-          <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-2xl space-y-2">
-            <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Config Check</h3>
-            <p className="text-[10px] text-zinc-400 font-mono">
-              App URL: {window.location.origin}
-            </p>
-          </div>
-        </div>
-
-        <button 
-          onClick={() => window.location.reload()}
-          className="w-full bg-white text-black py-4 rounded-2xl font-bold hover:bg-zinc-200 transition-all"
-        >
-          Force Reload App
-        </button>
-      </div>
-    </div>
-  );
-};
 
 const Navbar = () => {
   const { user, profile, isAdmin } = useAuth();
@@ -134,6 +42,10 @@ const Navbar = () => {
                 <Link to="/dashboard" className="flex items-center space-x-1 text-zinc-600 hover:text-zinc-900 font-medium">
                   <LayoutDashboard className="w-4 h-4" />
                   <span>Dashboard</span>
+                </Link>
+                <Link to="/profile" className="flex items-center space-x-1 text-zinc-600 hover:text-zinc-900 font-medium">
+                  <User className="w-4 h-4" />
+                  <span>Profile</span>
                 </Link>
                 {isAdmin && (
                   <Link to="/admin" className="flex items-center space-x-1 text-zinc-600 hover:text-zinc-900 font-medium">
@@ -175,6 +87,7 @@ const Navbar = () => {
           {user ? (
             <>
               <Link to="/dashboard" className="block text-zinc-600 font-medium" onClick={() => setIsOpen(false)}>Dashboard</Link>
+              <Link to="/profile" className="block text-zinc-600 font-medium" onClick={() => setIsOpen(false)}>Profile</Link>
               {isAdmin && <Link to="/admin" className="block text-zinc-600 font-medium" onClick={() => setIsOpen(false)}>Admin Panel</Link>}
               <button onClick={() => { auth.signOut(); setIsOpen(false); }} className="block text-red-600 font-medium">Logout</button>
             </>
@@ -207,7 +120,6 @@ export default function App() {
         <Router>
           <div className="min-h-screen bg-zinc-50 font-sans selection:bg-emerald-100 selection:text-emerald-900">
             <Navbar />
-            <DebugOverlay />
             <div className="pt-16">
               <Routes>
                 <Route path="/" element={<LandingPage />} />
@@ -229,6 +141,11 @@ export default function App() {
                   </ProtectedRoute>
                 } />
                 <Route path="/demos" element={<Demos />} />
+                <Route path="/profile" element={
+                  <ProtectedRoute>
+                    <Profile />
+                  </ProtectedRoute>
+                } />
                 <Route path="*" element={<Navigate to="/" />} />
               </Routes>
             </div>

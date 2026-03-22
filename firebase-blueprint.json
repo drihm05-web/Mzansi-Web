@@ -11,9 +11,57 @@
         "role": { "type": "string", "enum": ["client", "admin"] },
         "createdAt": { "type": "string", "format": "date-time" },
         "context": { "type": "string" },
-        "notes": { "type": "string" }
+        "notes": { "type": "string" },
+        "phone": { "type": "string" },
+        "company": { "type": "string" },
+        "address": { "type": "string" }
       },
       "required": ["uid", "email", "role"]
+    },
+    "UserStat": {
+      "title": "UserStat",
+      "description": "User statistics for the dashboard",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "mitigations": { "type": "number" },
+        "uptime": { "type": "number" },
+        "requests": { "type": "number" }
+      },
+      "required": ["id", "userId", "date"]
+    },
+    "Quote": {
+      "title": "Quote",
+      "description": "Marketing quotes for clients",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "clientEmail": { "type": "string" },
+        "planName": { "type": "string" },
+        "amount": { "type": "number" },
+        "requirements": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "sent", "accepted", "rejected"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "clientId", "planName", "amount"]
+    },
+    "EmailLog": {
+      "title": "EmailLog",
+      "description": "Log of sent emails",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "to": { "type": "string" },
+        "subject": { "type": "string" },
+        "content": { "type": "string" },
+        "sentAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["sent", "failed"] }
+      },
+      "required": ["id", "to", "subject", "content"]
     },
     "Plan": {
       "title": "Plan",
@@ -44,7 +92,10 @@
         "discountCode": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" },
         "siteUrl": { "type": "string" },
-        "adminUrl": { "type": "string" }
+        "adminUrl": { "type": "string" },
+        "isCustom": { "type": "boolean" },
+        "customRequirements": { "type": "string" },
+        "budget": { "type": "number" }
       },
       "required": ["id", "clientId", "planId", "status"]
     },
@@ -108,6 +159,18 @@
     "/users/{userId}": {
       "schema": "User",
       "description": "User profiles"
+    },
+    "/userStats/{statId}": {
+      "schema": "UserStat",
+      "description": "User statistics for dashboard"
+    },
+    "/quotes/{quoteId}": {
+      "schema": "Quote",
+      "description": "Marketing quotes"
+    },
+    "/emailLogs/{logId}": {
+      "schema": "EmailLog",
+      "description": "Sent email logs"
     },
     "/plans/{planId}": {
       "schema": "Plan",

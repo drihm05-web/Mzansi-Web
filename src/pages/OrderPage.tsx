@@ -4,7 +4,9 @@ import { PLANS } from '../constants';
 import { useAuth } from '../contexts/AuthContext';
 import { collection, addDoc, getDocs, query, where, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Shield, ArrowRight, CheckCircle2, Loader2, Tag, CreditCard, Copy, Check, Info, X } from 'lucide-react';
+import { Shield, ArrowRight, CheckCircle2, Loader2, Tag, CreditCard, Copy, Check, Info, X, Zap, MessageSquare } from 'lucide-react';
+import { GoogleGenAI } from "@google/genai";
+import { ProjectRequirements } from '../types';
 
 export default function OrderPage() {
   const { planId } = useParams();
@@ -13,6 +15,13 @@ export default function OrderPage() {
   const plan = PLANS.find(p => p.id === planId);
 
   const [designBrief, setDesignBrief] = useState('');
+  const [projectDetails, setProjectDetails] = useState<ProjectRequirements>({
+    platform: 'E-commerce',
+    paymentGateway: 'Stripe',
+    securityLevel: 'Standard',
+    csrAgents: 'None',
+    specifics: ''
+  });
   const [discountCode, setDiscountCode] = useState('');
   const [discountApplied, setDiscountApplied] = useState<number>(0);
   const [discountStatus, setDiscountStatus] = useState<'valid' | 'invalid' | null>(null);
@@ -64,12 +73,40 @@ export default function OrderPage() {
     if (!user) return;
     setLoading(true);
     try {
+      // Generate AI Vision
+      let aiVision = '';
+      try {
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+        const model = "gemini-3-flash-preview";
+        const prompt = `As a senior web architect, generate a visionary project blueprint for a client who ordered the ${plan.name} plan.
+        Requirements:
+        - Platform: ${projectDetails.platform}
+        - Payment Gateway: ${projectDetails.paymentGateway}
+        - Security: ${projectDetails.securityLevel}
+        - Support: ${projectDetails.csrAgents}
+        - Brief: ${designBrief}
+        
+        Provide a 3-sentence high-level technical vision that sounds futuristic and professional.`;
+        
+        const result = await ai.models.generateContent({
+          model,
+          contents: prompt
+        });
+        aiVision = result.text || '';
+      } catch (aiErr) {
+        console.error('AI Generation failed:', aiErr);
+        aiVision = 'Our architects are currently drafting your custom blueprint.';
+      }
+
       const docRef = await addDoc(collection(db, 'orders'), {
         clientId: user.uid,
         planId: plan.id,
         status: 'pending',
         designBrief,
         amount: finalPrice,
+        monthlyFee: plan.monthlyFee + plan.managementFee + plan.securityFee,
+        requirements: projectDetails,
+        aiVision,
         discountCode: discountApplied > 0 ? discountCode : null,
         createdAt: new Date().toISOString()
       });
@@ -224,14 +261,73 @@ export default function OrderPage() {
             )}
             
             <div>
+              <label className="block text-sm font-bold text-zinc-900 mb-6 uppercase tracking-widest">Project Specifics</label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Platform Type</label>
+                  <select 
+                    value={projectDetails.platform}
+                    onChange={(e) => setProjectDetails({...projectDetails, platform: e.target.value as any})}
+                    className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl p-4 text-sm focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all"
+                  >
+                    <option value="E-commerce">E-commerce</option>
+                    <option value="SaaS">SaaS Platform</option>
+                    <option value="Blog">Professional Blog</option>
+                    <option value="Portfolio">Creative Portfolio</option>
+                    <option value="Custom">Custom Enterprise</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Payment Gateway</label>
+                  <select 
+                    value={projectDetails.paymentGateway}
+                    onChange={(e) => setProjectDetails({...projectDetails, paymentGateway: e.target.value as any})}
+                    className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl p-4 text-sm focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all"
+                  >
+                    <option value="Stripe">Stripe (Global)</option>
+                    <option value="PayPal">PayPal</option>
+                    <option value="PayFast">PayFast (SA)</option>
+                    <option value="None">No Payments Needed</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Security Level</label>
+                  <select 
+                    value={projectDetails.securityLevel}
+                    onChange={(e) => setProjectDetails({...projectDetails, securityLevel: e.target.value as any})}
+                    className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl p-4 text-sm focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all"
+                  >
+                    <option value="Standard">Standard (SSL + Basic)</option>
+                    <option value="Enhanced">Enhanced (2FA + WAF)</option>
+                    <option value="Military-Grade">Military-Grade (Encrypted + Audited)</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">CSR Support Agents</label>
+                  <select 
+                    value={projectDetails.csrAgents}
+                    onChange={(e) => setProjectDetails({...projectDetails, csrAgents: e.target.value as any})}
+                    className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl p-4 text-sm focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all"
+                  >
+                    <option value="None">No Agents</option>
+                    <option value="1-2 Agents">1-2 Dedicated Agents</option>
+                    <option value="3-5 Agents">3-5 Dedicated Agents</option>
+                    <option value="Dedicated Team">Full Dedicated Team</option>
+                  </select>
+                </div>
+              </div>
+
               <label className="block text-sm font-bold text-zinc-900 mb-4 uppercase tracking-widest">Design Brief & Requirements</label>
-              <textarea
-                required
-                value={designBrief}
-                onChange={(e) => setDesignBrief(e.target.value)}
-                className="w-full px-6 py-4 rounded-2xl border border-zinc-200 focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none h-48 transition-all"
-                placeholder="Tell us about your brand, colors, logo inspiration, and any specific features you need..."
-              />
+              <div className="relative">
+                <MessageSquare className="absolute left-4 top-4 w-5 h-5 text-zinc-400" />
+                <textarea
+                  required
+                  value={designBrief}
+                  onChange={(e) => setDesignBrief(e.target.value)}
+                  className="w-full px-6 py-4 pl-12 rounded-2xl border border-zinc-200 focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none h-48 transition-all"
+                  placeholder="Tell us about your brand, colors, logo inspiration, and any specific features you need..."
+                />
+              </div>
               <p className="text-xs text-zinc-400 mt-3 italic">Our designers will use this as a starting point for your first draft.</p>
             </div>
 

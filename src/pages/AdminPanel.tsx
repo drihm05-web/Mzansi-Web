@@ -1,16 +1,18 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { collection, query, onSnapshot, orderBy, doc, updateDoc, addDoc, deleteDoc, Timestamp, where, getDocs, setDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { Order, Announcement, Demo, ProgressionUpdate, UserProfile, Plan, DiscountCode } from '../types';
+import { Order, Announcement, Demo, ProgressionUpdate, UserProfile, Plan, DiscountCode, Quote, EmailLog } from '../types';
+import { PLANS } from '../constants';
 import { 
-  Package, Bell, Globe, Plus, Trash2, Edit3, Save, X, 
+  Package, Bell, Globe, Plus, Trash2, Edit3, Edit2, Save, X, 
   CheckCircle, Clock, AlertCircle, ExternalLink, Zap, 
   Link as LinkIcon, Info, LayoutDashboard, Database, Users,
-  Tag, Calendar, ChevronRight, Search, CreditCard, Settings
+  Tag, Calendar, ChevronRight, Search, CreditCard, Settings,
+  FileText, Mail, BarChart3, TrendingUp, User
 } from 'lucide-react';
 import { format } from 'date-fns';
 
-type TabType = 'orders' | 'users' | 'plans' | 'marketing' | 'demos' | 'settings';
+type TabType = 'orders' | 'users' | 'plans' | 'marketing' | 'demos' | 'settings' | 'crm';
 
 export default function AdminPanel() {
   const [activeTab, setActiveTab] = useState<TabType>('orders');
@@ -20,6 +22,8 @@ export default function AdminPanel() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [discountCodes, setDiscountCodes] = useState<DiscountCode[]>([]);
   const [demos, setDemos] = useState<Demo[]>([]);
+  const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [emailLogs, setEmailLogs] = useState<EmailLog[]>([]);
   const [eftDetails, setEftDetails] = useState({
     bankName: '',
     accountNumber: '',
@@ -31,9 +35,37 @@ export default function AdminPanel() {
   
   // Modal states
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+  const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
+  const [isUpdatingUser, setIsUpdatingUser] = useState(false);
   const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
+  const [editingDemo, setEditingDemo] = useState<Demo | null>(null);
+  const [editingAnnouncement, setEditingAnnouncement] = useState<Announcement | null>(null);
+  const [editingDiscountCode, setEditingDiscountCode] = useState<DiscountCode | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    isDanger?: boolean;
+  } | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+  const [generatingQuote, setGeneratingQuote] = useState<{
+    clientEmail: string;
+    planName: string;
+    amount: number;
+    requirements: string;
+  } | null>(null);
   const [newUpdate, setNewUpdate] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [emailModal, setEmailModal] = useState<{ to: string, subject: string, content: string } | null>(null);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     const ordersQuery = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
@@ -68,8 +100,16 @@ export default function AdminPanel() {
     }, (err) => handleFirestoreError(err, OperationType.LIST, 'demos'));
 
     const unsubscribeDiscounts = onSnapshot(discountsQuery, (snapshot) => {
-      setDiscountCodes(snapshot.docs.map(doc => ({ ...doc.data() } as DiscountCode)));
+      setDiscountCodes(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any)));
     }, (err) => handleFirestoreError(err, OperationType.LIST, 'discountCodes'));
+
+    const unsubscribeQuotes = onSnapshot(query(collection(db, 'quotes'), orderBy('createdAt', 'desc')), (snapshot) => {
+      setQuotes(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Quote)));
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'quotes'));
+
+    const unsubscribeEmails = onSnapshot(query(collection(db, 'emailLogs'), orderBy('sentAt', 'desc')), (snapshot) => {
+      setEmailLogs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as EmailLog)));
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'emailLogs'));
 
     const unsubscribeSettings = onSnapshot(doc(db, 'settings', 'payment'), (snapshot) => {
       if (snapshot.exists()) {
@@ -84,9 +124,121 @@ export default function AdminPanel() {
       unsubscribeAnnouncements();
       unsubscribeDemos();
       unsubscribeDiscounts();
+      unsubscribeQuotes();
+      unsubscribeEmails();
       unsubscribeSettings();
     };
   }, []);
+
+  const handleSeedStats = async (userId: string) => {
+    setConfirmModal({
+      title: 'Seed Stats',
+      message: 'Seed 30 days of dummy stats for this user?',
+      onConfirm: async () => {
+        try {
+          const batch = [];
+          for (let i = 0; i < 30; i++) {
+            const date = new Date();
+            date.setDate(date.getDate() - (29 - i));
+            batch.push(addDoc(collection(db, 'userStats'), {
+              userId,
+              date: date.toISOString().split('T')[0],
+              mitigations: Math.floor(Math.random() * 5000) + 1000,
+              uptime: 99.9,
+              requests: Math.floor(Math.random() * 100000) + 50000
+            }));
+          }
+          await Promise.all(batch);
+        } catch (err) {
+          handleFirestoreError(err, OperationType.CREATE, 'userStats');
+        }
+      }
+    });
+  };
+
+  const handleGenerateQuote = async () => {
+    if (!generatingQuote) return;
+    const { clientEmail, planName, amount, requirements } = generatingQuote;
+    if (!clientEmail || !planName || isNaN(amount)) return;
+    
+    const user = users.find(u => u.email === clientEmail);
+    if (!user) {
+      setToast({ message: 'User not found. Please ensure they have an account.', type: 'error' });
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      await addDoc(collection(db, 'quotes'), {
+        clientId: user.uid,
+        clientName: user.name,
+        clientEmail: user.email,
+        planName,
+        amount,
+        requirements: requirements || '',
+        status: 'pending',
+        createdAt: new Date().toISOString()
+      });
+      setGeneratingQuote(null);
+      setToast({ message: 'Quote generated successfully!', type: 'success' });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, 'quotes');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSendEmail = async () => {
+    if (!emailModal || !emailModal.subject || !emailModal.content) return;
+    setIsSendingEmail(true);
+    try {
+      await addDoc(collection(db, 'emailLogs'), {
+        to: emailModal.to,
+        subject: emailModal.subject,
+        content: emailModal.content,
+        sentAt: new Date().toISOString(),
+        status: 'sent'
+      });
+      
+      // Simulate sending by opening mailto
+      const mailtoUrl = `mailto:${emailModal.to}?subject=${encodeURIComponent(emailModal.subject)}&body=${encodeURIComponent(emailModal.content)}`;
+      window.location.href = mailtoUrl;
+      
+      setEmailModal(null);
+      setToast({ message: 'Email logged and client mailer opened!', type: 'success' });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, 'emailLogs');
+    } finally {
+      setIsSendingEmail(false);
+    }
+  };
+
+  const handleDeleteUser = async (uid: string) => {
+    setConfirmModal({
+      title: 'Delete User',
+      message: 'Are you sure you want to delete this user? This will NOT delete their auth account.',
+      isDanger: true,
+      onConfirm: async () => {
+        try {
+          await deleteDoc(doc(db, 'users', uid));
+        } catch (err) {
+          handleFirestoreError(err, OperationType.DELETE, `users/${uid}`);
+        }
+      }
+    });
+  };
+
+  const handleUpdateUser = async (userId: string, updates: Partial<UserProfile>) => {
+    setIsUpdatingUser(true);
+    try {
+      await updateDoc(doc(db, 'users', userId), updates);
+      setEditingUser(null);
+    } catch (error) {
+      console.error('Error updating user:', error);
+    } finally {
+      setIsUpdatingUser(false);
+    }
+  };
 
   const handleSaveOrderDetails = async () => {
     if (!editingOrder) return;
@@ -123,108 +275,79 @@ export default function AdminPanel() {
   };
 
   const handleDeleteOrder = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this order?')) return;
-    try {
-      await deleteDoc(doc(db, 'orders', id));
-    } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `orders/${id}`);
-    }
+    setConfirmModal({
+      title: 'Delete Order',
+      message: 'Are you sure you want to delete this order?',
+      isDanger: true,
+      onConfirm: async () => {
+        try {
+          await deleteDoc(doc(db, 'orders', id));
+        } catch (err) {
+          handleFirestoreError(err, OperationType.DELETE, `orders/${id}`);
+        }
+      }
+    });
   };
 
-  const handleAddAnnouncement = async () => {
-    const title = prompt('Enter announcement title:');
-    const content = prompt('Enter announcement content:');
-    if (!title || !content) return;
-
-    try {
-      await addDoc(collection(db, 'announcements'), {
-        title,
-        content,
-        createdAt: new Date().toISOString()
-      });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, 'announcements');
-    }
-  };
-
-  const handleAddDemo = async () => {
-    const title = prompt('Enter demo title:');
-    const description = prompt('Enter demo description:');
-    const url = prompt('Enter demo URL:');
-    if (!title || !description || !url) return;
-
-    try {
-      await addDoc(collection(db, 'demos'), {
-        title,
-        description,
-        url,
-        createdAt: new Date().toISOString()
-      });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, 'demos');
-    }
+  const handleAddDemo = () => {
+    setEditingDemo({ id: '', title: '', description: '', url: '', createdAt: '' });
   };
 
   const handleDeleteAnnouncement = async (id: string) => {
-    if (!confirm('Delete this announcement?')) return;
-    try {
-      await deleteDoc(doc(db, 'announcements', id));
-    } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `announcements/${id}`);
-    }
+    setConfirmModal({
+      title: 'Delete Announcement',
+      message: 'Are you sure you want to delete this announcement?',
+      isDanger: true,
+      onConfirm: async () => {
+        try {
+          await deleteDoc(doc(db, 'announcements', id));
+        } catch (err) {
+          handleFirestoreError(err, OperationType.DELETE, `announcements/${id}`);
+        }
+      }
+    });
   };
 
   const handleDeleteDemo = async (id: string) => {
-    if (!confirm('Delete this demo?')) return;
-    try {
-      await deleteDoc(doc(db, 'demos', id));
-    } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `demos/${id}`);
-    }
-  };
-
-  const handleAddDiscountCode = async () => {
-    const code = prompt('Enter discount code (e.g. SAVE20):');
-    const percentage = prompt('Enter discount percentage (e.g. 20):');
-    if (!code || !percentage) return;
-
-    try {
-      await addDoc(collection(db, 'discountCodes'), {
-        code: code.toUpperCase(),
-        percentage: Number(percentage),
-        active: true,
-        createdAt: new Date().toISOString()
-      });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, 'discountCodes');
-    }
+    setConfirmModal({
+      title: 'Delete Demo',
+      message: 'Are you sure you want to delete this demo?',
+      isDanger: true,
+      onConfirm: async () => {
+        try {
+          await deleteDoc(doc(db, 'demos', id));
+        } catch (err) {
+          handleFirestoreError(err, OperationType.DELETE, `demos/${id}`);
+        }
+      }
+    });
   };
 
   const handleDeleteDiscountCode = async (id: string) => {
-    if (!confirm('Delete this discount code?')) return;
-    try {
-      // We need the document ID. In the map we used code.code as key, but we need the firestore doc id.
-      // Let's update the snapshot to include ID.
-      const q = query(collection(db, 'discountCodes'), where('code', '==', id));
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        await deleteDoc(doc(db, 'discountCodes', snap.docs[0].id));
+    setConfirmModal({
+      title: 'Delete Discount Code',
+      message: 'Are you sure you want to delete this discount code?',
+      isDanger: true,
+      onConfirm: async () => {
+        try {
+          await deleteDoc(doc(db, 'discountCodes', id));
+        } catch (err) {
+          handleFirestoreError(err, OperationType.DELETE, `discountCodes/${id}`);
+        }
       }
-    } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `discountCodes/${id}`);
-    }
+    });
   };
 
   const handleSaveSettings = async () => {
     setIsSaving(true);
     try {
       await updateDoc(doc(db, 'settings', 'payment'), eftDetails);
-      alert('Settings saved successfully!');
+      setToast({ message: 'Settings saved successfully!', type: 'success' });
     } catch (err) {
       // If it doesn't exist, create it
       try {
         await setDoc(doc(db, 'settings', 'payment'), eftDetails);
-        alert('Settings saved successfully!');
+        setToast({ message: 'Settings saved successfully!', type: 'success' });
       } catch (innerErr) {
         handleFirestoreError(innerErr, OperationType.UPDATE, 'settings/payment');
       }
@@ -233,13 +356,38 @@ export default function AdminPanel() {
     }
   };
 
+  const handleSeedPlans = async () => {
+    setConfirmModal({
+      title: 'Seed Plans',
+      message: 'This will seed the database with the initial plans. Existing plans with the same IDs will be overwritten.',
+      onConfirm: async () => {
+        setIsSaving(true);
+        try {
+          for (const plan of PLANS) {
+            await setDoc(doc(db, 'plans', plan.id), plan);
+          }
+        } catch (err) {
+          handleFirestoreError(err, OperationType.CREATE, 'plans');
+        } finally {
+          setIsSaving(false);
+        }
+      }
+    });
+  };
+
   const handleDeletePlan = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this plan? This may affect existing orders.')) return;
-    try {
-      await deleteDoc(doc(db, 'plans', id));
-    } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `plans/${id}`);
-    }
+    setConfirmModal({
+      title: 'Delete Plan',
+      message: 'Are you sure you want to delete this plan? This may affect existing orders.',
+      isDanger: true,
+      onConfirm: async () => {
+        try {
+          await deleteDoc(doc(db, 'plans', id));
+        } catch (err) {
+          handleFirestoreError(err, OperationType.DELETE, `plans/${id}`);
+        }
+      }
+    });
   };
 
   const handleSavePlan = async () => {
@@ -251,16 +399,88 @@ export default function AdminPanel() {
         const { id, ...planData } = editingPlan;
         await updateDoc(planRef, planData);
       } else {
-        // For new plans, we need an ID. Let's use a slug or random ID if not provided
         const newPlanId = editingPlan.name.toLowerCase().replace(/\s+/g, '-');
-        await addDoc(collection(db, 'plans'), {
+        await setDoc(doc(db, 'plans', newPlanId), {
           ...editingPlan,
-          id: newPlanId // Firestore addDoc generates a random ID, but the Plan interface expects an 'id' field.
+          id: newPlanId
         });
       }
       setEditingPlan(null);
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `plans/${editingPlan.id || 'new'}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveDemo = async () => {
+    if (!editingDemo) return;
+    setIsSaving(true);
+    try {
+      if (editingDemo.id) {
+        const demoRef = doc(db, 'demos', editingDemo.id);
+        const { id, ...demoData } = editingDemo;
+        await updateDoc(demoRef, demoData);
+      } else {
+        await addDoc(collection(db, 'demos'), {
+          ...editingDemo,
+          createdAt: new Date().toISOString()
+        });
+      }
+      setEditingDemo(null);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `demos/${editingDemo.id || 'new'}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveAnnouncement = async () => {
+    if (!editingAnnouncement) return;
+    setIsSaving(true);
+    try {
+      if (editingAnnouncement.id) {
+        await updateDoc(doc(db, 'announcements', editingAnnouncement.id), {
+          title: editingAnnouncement.title,
+          content: editingAnnouncement.content
+        });
+      } else {
+        await addDoc(collection(db, 'announcements'), {
+          title: editingAnnouncement.title,
+          content: editingAnnouncement.content,
+          createdAt: new Date().toISOString()
+        });
+      }
+      setEditingAnnouncement(null);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, 'announcements');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveDiscountCode = async () => {
+    if (!editingDiscountCode) return;
+    setIsSaving(true);
+    try {
+      const codeData = {
+        code: editingDiscountCode.code.toUpperCase(),
+        percentage: Number(editingDiscountCode.percentage),
+        active: editingDiscountCode.active ?? true,
+        expiresAt: editingDiscountCode.expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+      };
+
+      if ((editingDiscountCode as any).id) {
+        await updateDoc(doc(db, 'discountCodes', (editingDiscountCode as any).id), codeData);
+      } else {
+        await addDoc(collection(db, 'discountCodes'), {
+          ...codeData,
+          createdAt: new Date().toISOString()
+        });
+      }
+      setEditingDiscountCode(null);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, 'discountCodes');
     } finally {
       setIsSaving(false);
     }
@@ -278,11 +498,11 @@ export default function AdminPanel() {
 
   const tabs = [
     { id: 'orders', label: 'Orders', icon: Package },
-    { id: 'users', label: 'Users', icon: Users },
+    { id: 'crm', label: 'CRM', icon: Users },
+    { id: 'marketing', label: 'Marketing', icon: TrendingUp },
+    { id: 'users', label: 'Users', icon: Settings },
     { id: 'plans', label: 'Plans', icon: Database },
-    { id: 'marketing', label: 'Marketing', icon: Zap },
     { id: 'demos', label: 'Demos', icon: Globe },
-    { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
   return (
@@ -323,6 +543,122 @@ export default function AdminPanel() {
 
       {/* Tab Content */}
       <div className="space-y-8">
+        {activeTab === 'crm' && (
+          <div className="space-y-12">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+              <h2 className="text-3xl font-black text-zinc-900 flex items-center">
+                <Users className="w-8 h-8 mr-3 text-emerald-600" />
+                Customer Relationship Management
+              </h2>
+              <div className="relative w-full md:w-96">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-400" />
+                <input 
+                  type="text" 
+                  placeholder="Search clients by name or email..."
+                  className="w-full pl-12 pr-4 py-4 rounded-2xl border border-zinc-200 focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all font-medium"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="grid lg:grid-cols-3 gap-8">
+              <div className="lg:col-span-2 space-y-4">
+                {users.filter(u => u.name.toLowerCase().includes(searchTerm.toLowerCase()) || u.email.toLowerCase().includes(searchTerm.toLowerCase())).map(user => (
+                  <div key={user.uid} className="bg-white p-8 rounded-[32px] border border-zinc-200 shadow-sm hover:shadow-md transition-all group">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                      <div className="flex items-center space-x-4">
+                        <div className="w-14 h-14 bg-zinc-100 rounded-2xl flex items-center justify-center text-zinc-400 group-hover:bg-emerald-50 group-hover:text-emerald-600 transition-colors">
+                          <User className="w-8 h-8" />
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-bold text-zinc-900">{user.name}</h3>
+                          <p className="text-zinc-500 text-sm font-medium">{user.email}</p>
+                          <div className="flex items-center space-x-2 mt-1">
+                            <span className="text-[10px] font-black uppercase tracking-widest bg-zinc-100 text-zinc-600 px-2 py-0.5 rounded-full">
+                              {user.role}
+                            </span>
+                            {user.company && (
+                              <span className="text-[10px] font-black uppercase tracking-widest bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full">
+                                {user.company}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <button 
+                          onClick={() => setEmailModal({ to: user.email, subject: `Regarding your project at Mzansi Web`, content: `Hi ${user.name},\n\n` })}
+                          className="p-3 bg-zinc-50 text-zinc-600 rounded-xl hover:bg-emerald-50 hover:text-emerald-600 transition-all"
+                          title="Send Email"
+                        >
+                          <Mail className="w-5 h-5" />
+                        </button>
+                        <button 
+                          onClick={() => setEditingUser(user)}
+                          className="p-3 bg-zinc-50 text-zinc-600 rounded-xl hover:bg-blue-50 hover:text-blue-600 transition-all"
+                          title="Edit Profile"
+                        >
+                          <Edit3 className="w-5 h-5" />
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteUser(user.uid)}
+                          className="p-3 bg-zinc-50 text-zinc-600 rounded-xl hover:bg-red-50 hover:text-red-600 transition-all"
+                          title="Delete User"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="space-y-8">
+                <div className="bg-zinc-900 p-8 rounded-[40px] text-white shadow-2xl">
+                  <h3 className="text-xl font-bold mb-6 flex items-center">
+                    <TrendingUp className="w-6 h-6 mr-2 text-emerald-400" />
+                    CRM Insights
+                  </h3>
+                  <div className="space-y-6">
+                    <div className="flex justify-between items-center p-4 bg-white/5 rounded-2xl border border-white/10">
+                      <span className="text-zinc-400 text-sm font-medium">Total Clients</span>
+                      <span className="text-2xl font-black">{users.length}</span>
+                    </div>
+                    <div className="flex justify-between items-center p-4 bg-white/5 rounded-2xl border border-white/10">
+                      <span className="text-zinc-400 text-sm font-medium">Active Proposals</span>
+                      <span className="text-2xl font-black">{quotes.length}</span>
+                    </div>
+                    <div className="flex justify-between items-center p-4 bg-white/5 rounded-2xl border border-white/10">
+                      <span className="text-zinc-400 text-sm font-medium">Conversion Rate</span>
+                      <span className="text-2xl font-black">24%</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white p-8 rounded-[40px] border border-zinc-200 shadow-sm">
+                  <h3 className="text-xl font-bold text-zinc-900 mb-6 flex items-center">
+                    <Mail className="w-6 h-6 mr-2 text-emerald-600" />
+                    Recent Activity
+                  </h3>
+                  <div className="space-y-4">
+                    {emailLogs.slice(0, 5).map(log => (
+                      <div key={log.id} className="flex items-start space-x-3 p-3 rounded-2xl hover:bg-zinc-50 transition-colors">
+                        <div className="p-2 bg-blue-50 rounded-lg">
+                          <Mail className="w-4 h-4 text-blue-600" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-zinc-900 line-clamp-1">{log.subject}</p>
+                          <p className="text-[10px] text-zinc-500">To: {log.to}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         {activeTab === 'orders' && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
@@ -347,43 +683,97 @@ export default function AdminPanel() {
                   </thead>
                   <tbody className="divide-y divide-zinc-100">
                     {orders.map(order => (
-                      <tr key={order.id} className="hover:bg-zinc-50/50 transition-colors group">
-                        <td className="px-6 py-4">
-                          <span className="font-mono text-xs font-bold text-zinc-400">#{order.id.slice(0, 8)}</span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="text-sm font-bold text-zinc-900">{order.clientId.slice(0, 8)}...</div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className="text-xs font-bold px-2 py-1 bg-zinc-100 rounded-md text-zinc-600 uppercase">{order.planId}</span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border ${getStatusColor(order.status)}`}>
-                            {order.status.replace('-', ' ')}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className="text-sm font-bold text-zinc-900">R{order.amount}</span>
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          <div className="flex items-center justify-end space-x-2">
-                            <button 
-                              onClick={() => setEditingOrder(order)}
-                              className="p-2 text-zinc-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all"
-                              title="Edit Order"
-                            >
-                              <Edit3 className="w-4 h-4" />
-                            </button>
-                            <button 
-                              onClick={() => handleDeleteOrder(order.id)}
-                              className="p-2 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
-                              title="Delete Order"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
+                      <React.Fragment key={order.id}>
+                        <tr className="hover:bg-zinc-50/50 transition-colors group">
+                          <td className="px-6 py-4">
+                            <span className="font-mono text-xs font-bold text-zinc-400">#{order.id.slice(0, 8)}</span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="text-sm font-bold text-zinc-900">{order.clientId.slice(0, 8)}...</div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="text-xs font-bold px-2 py-1 bg-zinc-100 rounded-md text-zinc-600 uppercase">{order.planId}</span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border ${getStatusColor(order.status)}`}>
+                              {order.status.replace('-', ' ')}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="text-sm font-bold text-zinc-900">R{order.amount}</span>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <div className="flex items-center justify-end space-x-2">
+                              <button 
+                                onClick={() => setEditingOrder(order)}
+                                className="p-2 text-zinc-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all"
+                                title="Edit Order"
+                              >
+                                <Edit3 className="w-4 h-4" />
+                              </button>
+                              <button 
+                                onClick={() => handleDeleteOrder(order.id)}
+                                className="p-2 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
+                                title="Delete Order"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        {/* Detailed Order View */}
+                        <tr className="bg-zinc-50/30">
+                          <td colSpan={6} className="px-6 py-4 border-t border-zinc-100">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                              <div className="space-y-4">
+                                <div className="flex items-center text-xs font-bold text-zinc-400 uppercase tracking-widest">
+                                  <Info className="w-3 h-3 mr-2" /> Project Requirements
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div className="bg-white p-3 rounded-2xl border border-zinc-100">
+                                    <p className="text-[10px] text-zinc-400 uppercase font-bold">Platform</p>
+                                    <p className="text-sm font-medium text-zinc-700">{order.requirements?.platform || 'Standard'}</p>
+                                  </div>
+                                  <div className="bg-white p-3 rounded-2xl border border-zinc-100">
+                                    <p className="text-[10px] text-zinc-400 uppercase font-bold">Gateway</p>
+                                    <p className="text-sm font-medium text-zinc-700">{order.requirements?.paymentGateway || 'None'}</p>
+                                  </div>
+                                  <div className="bg-white p-3 rounded-2xl border border-zinc-100">
+                                    <p className="text-[10px] text-zinc-400 uppercase font-bold">Security</p>
+                                    <p className="text-sm font-medium text-zinc-700">{order.requirements?.securityLevel || 'Standard'}</p>
+                                  </div>
+                                  <div className="bg-white p-3 rounded-2xl border border-zinc-100">
+                                    <p className="text-[10px] text-zinc-400 uppercase font-bold">CSR Agents</p>
+                                    <p className="text-sm font-medium text-zinc-700">{order.requirements?.csrAgents || 'None'}</p>
+                                  </div>
+                                </div>
+                                {order.requirements?.specifics && (
+                                  <div className="bg-white p-4 rounded-2xl border border-zinc-100">
+                                    <p className="text-[10px] text-zinc-400 uppercase font-bold mb-1">Specific Requirements</p>
+                                    <p className="text-xs text-zinc-600 leading-relaxed">{order.requirements.specifics}</p>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="space-y-4">
+                                <div className="flex items-center text-xs font-bold text-emerald-600 uppercase tracking-widest">
+                                  <Zap className="w-3 h-3 mr-2" /> AI Generated Blueprint
+                                </div>
+                                <div className="bg-emerald-50/50 p-4 rounded-2xl border border-emerald-100 min-h-[100px]">
+                                  {order.aiVision ? (
+                                    <p className="text-xs text-emerald-800 italic leading-relaxed">{order.aiVision}</p>
+                                  ) : (
+                                    <p className="text-xs text-zinc-400 italic leading-relaxed">No AI vision generated yet.</p>
+                                  )}
+                                </div>
+                                <div className="bg-white p-4 rounded-2xl border border-zinc-100">
+                                  <p className="text-[10px] text-zinc-400 uppercase font-bold mb-1">Original Design Brief</p>
+                                  <p className="text-xs text-zinc-600 leading-relaxed">{order.designBrief}</p>
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      </React.Fragment>
                     ))}
                   </tbody>
                 </table>
@@ -435,8 +825,19 @@ export default function AdminPanel() {
                         <td className="px-6 py-4 text-sm text-zinc-500">
                           {format(new Date(user.createdAt), 'MMM d, yyyy')}
                         </td>
-                        <td className="px-6 py-4 text-right">
-                          <button className="p-2 text-zinc-400 hover:text-emerald-600"><Edit3 className="w-4 h-4" /></button>
+                        <td className="px-6 py-4 text-right flex justify-end gap-2">
+                          <button 
+                            onClick={() => setEditingUser(user)}
+                            className="p-2 text-zinc-400 hover:text-emerald-600"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteUser(user.uid)}
+                            className="p-2 text-zinc-400 hover:text-red-600"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -454,12 +855,31 @@ export default function AdminPanel() {
                 <Database className="w-6 h-6 mr-2 text-emerald-600" />
                 Subscription Plans
               </h2>
-              <button 
-                onClick={() => setEditingPlan({ id: '', name: '', price: 0, description: '', features: [], targetAudience: '' })}
-                className="flex items-center px-4 py-2 bg-emerald-600 text-white rounded-xl font-bold text-sm hover:bg-emerald-700 transition-all"
-              >
-                <Plus className="w-4 h-4 mr-2" /> Add Plan
-              </button>
+              <div className="flex gap-2">
+                <button 
+                  onClick={handleSeedPlans}
+                  disabled={isSaving}
+                  className="px-4 py-2 bg-zinc-100 text-zinc-600 rounded-xl hover:bg-zinc-200 transition-all text-xs font-bold flex items-center"
+                >
+                  <Zap className="w-3 h-3 mr-2" /> Seed Initial Plans
+                </button>
+                <button 
+                  onClick={() => setEditingPlan({ 
+                    id: '', 
+                    name: '', 
+                    price: 0, 
+                    monthlyFee: 0,
+                    managementFee: 0,
+                    securityFee: 0,
+                    description: '', 
+                    features: [], 
+                    targetAudience: '' 
+                  })}
+                  className="flex items-center px-4 py-2 bg-emerald-600 text-white rounded-xl font-bold text-sm hover:bg-emerald-700 transition-all"
+                >
+                  <Plus className="w-4 h-4 mr-2" /> Add Plan
+                </button>
+              </div>
             </div>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {plans.map(plan => (
@@ -499,16 +919,148 @@ export default function AdminPanel() {
         )}
 
         {activeTab === 'marketing' && (
-          <div className="grid lg:grid-cols-2 gap-12">
-            {/* Announcements */}
-            <div className="space-y-6">
+          <div className="space-y-12">
+            {/* Stats Overview */}
+            <div className="grid md:grid-cols-3 gap-6">
+              <div className="bg-white p-8 rounded-[32px] border border-zinc-200 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 bg-emerald-50 rounded-2xl">
+                    <TrendingUp className="w-6 h-6 text-emerald-600" />
+                  </div>
+                  <span className="text-xs font-bold text-emerald-600">+12%</span>
+                </div>
+                <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest">Total Quotes</p>
+                <p className="text-3xl font-black text-zinc-900 mt-1">{quotes.length}</p>
+              </div>
+              <div className="bg-white p-8 rounded-[32px] border border-zinc-200 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 bg-blue-50 rounded-2xl">
+                    <Mail className="w-6 h-6 text-blue-600" />
+                  </div>
+                  <span className="text-xs font-bold text-blue-600">Active</span>
+                </div>
+                <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest">Emails Sent</p>
+                <p className="text-3xl font-black text-zinc-900 mt-1">{emailLogs.length}</p>
+              </div>
+              <div className="bg-white p-8 rounded-[32px] border border-zinc-200 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 bg-amber-50 rounded-2xl">
+                    <Zap className="w-6 h-6 text-amber-600" />
+                  </div>
+                  <span className="text-xs font-bold text-amber-600">High</span>
+                </div>
+                <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest">Conversion Rate</p>
+                <p className="text-3xl font-black text-zinc-900 mt-1">24%</p>
+              </div>
+            </div>
+
+            <div className="grid lg:grid-cols-2 gap-12">
+              {/* Quotes Management */}
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-bold text-zinc-900 flex items-center">
+                    <FileText className="w-6 h-6 mr-2 text-emerald-600" />
+                    Quotes & Proposals
+                  </h2>
+                  <button 
+                    onClick={() => setGeneratingQuote({ clientEmail: '', planName: '', amount: 0, requirements: '' })}
+                    className="flex items-center px-4 py-2 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition-all"
+                  >
+                    <Plus className="w-4 h-4 mr-2" /> New Quote
+                  </button>
+                </div>
+                <div className="space-y-4">
+                  {quotes.length > 0 ? quotes.map(quote => (
+                    <div key={quote.id} className="bg-white p-6 rounded-3xl border border-zinc-200 shadow-sm">
+                      <div className="flex justify-between items-start mb-4">
+                        <div>
+                          <h3 className="font-bold text-zinc-900">{quote.planName}</h3>
+                          <p className="text-xs text-zinc-500">{quote.clientName} ({quote.clientEmail})</p>
+                        </div>
+                        <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase ${
+                          quote.status === 'sent' ? 'bg-blue-50 text-blue-600' : 
+                          quote.status === 'accepted' ? 'bg-emerald-50 text-emerald-600' : 'bg-zinc-100 text-zinc-600'
+                        }`}>
+                          {quote.status}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-end">
+                        <p className="text-xl font-black text-zinc-900">R{quote.amount.toLocaleString()}</p>
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => setEmailModal({ to: quote.clientEmail, subject: `Quote for ${quote.planName}`, content: `Hi ${quote.clientName},\n\nHere is your quote for ${quote.planName}.\n\nRequirements: ${quote.requirements}\n\nAmount: R${quote.amount}\n\n` })}
+                            className="p-2 text-zinc-400 hover:text-emerald-600"
+                          >
+                            <Mail className="w-4 h-4" />
+                          </button>
+                          <button 
+                            onClick={() => {
+                              setConfirmModal({
+                                title: 'Delete Quote',
+                                message: 'Are you sure you want to delete this quote?',
+                                isDanger: true,
+                                onConfirm: async () => {
+                                  try {
+                                    await deleteDoc(doc(db, 'quotes', quote.id));
+                                  } catch (err) {
+                                    handleFirestoreError(err, OperationType.DELETE, `quotes/${quote.id}`);
+                                  }
+                                }
+                              });
+                            }}
+                            className="p-2 text-zinc-400 hover:text-red-600"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )) : (
+                    <div className="p-12 text-center bg-zinc-50 rounded-3xl border border-dashed border-zinc-200 text-zinc-400">
+                      No quotes generated yet.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Email Tracking */}
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-bold text-zinc-900 flex items-center">
+                    <Mail className="w-6 h-6 mr-2 text-emerald-600" />
+                    Email Communications
+                  </h2>
+                </div>
+                <div className="bg-white rounded-3xl border border-zinc-200 shadow-sm overflow-hidden">
+                  <div className="divide-y divide-zinc-100">
+                    {emailLogs.length > 0 ? emailLogs.map(log => (
+                      <div key={log.id} className="p-4 hover:bg-zinc-50 transition-colors">
+                        <div className="flex justify-between items-start mb-1">
+                          <p className="text-sm font-bold text-zinc-900">{log.subject}</p>
+                          <span className="text-[10px] font-bold text-emerald-600 uppercase">Sent</span>
+                        </div>
+                        <p className="text-xs text-zinc-500 mb-2">To: {log.to}</p>
+                        <p className="text-[10px] text-zinc-400">{format(new Date(log.sentAt), 'PPP p')}</p>
+                      </div>
+                    )) : (
+                      <div className="p-12 text-center text-zinc-400">
+                        No emails tracked yet.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Announcements & Discounts */}
+            <div className="grid lg:grid-cols-2 gap-12 pt-12 border-t border-zinc-100">
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold text-zinc-900 flex items-center">
                   <Bell className="w-6 h-6 mr-2 text-emerald-600" />
                   Announcements
                 </h2>
                 <button 
-                  onClick={handleAddAnnouncement}
+                  onClick={() => setEditingAnnouncement({ id: '', title: '', content: '', createdAt: '' })}
                   className="p-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-all"
                 >
                   <Plus className="w-4 h-4" />
@@ -519,12 +1071,20 @@ export default function AdminPanel() {
                   <div key={ann.id} className="bg-white p-6 rounded-3xl border border-zinc-200 shadow-sm">
                     <div className="flex justify-between items-start mb-2">
                       <h3 className="font-bold text-zinc-900">{ann.title}</h3>
-                      <button 
-                        onClick={() => handleDeleteAnnouncement(ann.id)}
-                        className="text-zinc-400 hover:text-red-600"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="flex space-x-2">
+                        <button 
+                          onClick={() => setEditingAnnouncement(ann)}
+                          className="text-zinc-400 hover:text-emerald-600"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteAnnouncement(ann.id)}
+                          className="text-zinc-400 hover:text-red-600"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                     <p className="text-zinc-600 text-sm leading-relaxed mb-4">{ann.content}</p>
                     <div className="text-xs text-zinc-400 font-medium">
@@ -543,7 +1103,7 @@ export default function AdminPanel() {
                   Discount Codes
                 </h2>
                 <button 
-                  onClick={handleAddDiscountCode}
+                  onClick={() => setEditingDiscountCode({ code: '', percentage: 0, active: true, expiresAt: '' })}
                   className="p-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-all"
                 >
                   <Plus className="w-4 h-4" />
@@ -563,12 +1123,20 @@ export default function AdminPanel() {
                       </div>
                       <p className="text-sm text-emerald-600 font-bold mt-1">{code.percentage}% OFF</p>
                     </div>
-                    <button 
-                      onClick={() => handleDeleteDiscountCode(code.code)}
-                      className="text-zinc-400 hover:text-red-600"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center space-x-4">
+                      <button 
+                        onClick={() => setEditingDiscountCode(code as any)}
+                        className="text-zinc-400 hover:text-emerald-600"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteDiscountCode((code as any).id)}
+                        className="text-zinc-400 hover:text-red-600"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -596,7 +1164,12 @@ export default function AdminPanel() {
                   <div className="flex justify-between items-start">
                     <h3 className="font-bold text-zinc-900">{demo.title}</h3>
                     <div className="flex space-x-2">
-                      <button className="p-2 text-zinc-400 hover:text-emerald-600"><Edit3 className="w-4 h-4" /></button>
+                      <button 
+                        onClick={() => setEditingDemo(demo)}
+                        className="p-2 text-zinc-400 hover:text-emerald-600"
+                      >
+                        <Edit3 className="w-4 h-4" />
+                      </button>
                       <button 
                         onClick={() => handleDeleteDemo(demo.id)}
                         className="p-2 text-zinc-400 hover:text-red-600"
@@ -699,6 +1272,117 @@ export default function AdminPanel() {
           </div>
         )}
       </div>
+
+      {/* User Edit Modal */}
+      {editingUser && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50">
+              <div>
+                <h3 className="text-xl font-bold text-zinc-900">Edit User Role</h3>
+                <p className="text-xs text-zinc-500 mt-1">{editingUser.name}</p>
+              </div>
+              <button onClick={() => setEditingUser(null)}><X className="w-6 h-6 text-zinc-400 hover:text-zinc-600" /></button>
+            </div>
+            
+            <div className="p-8 space-y-6 max-h-[70vh] overflow-y-auto">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Role</label>
+                  <select
+                    className="w-full p-4 rounded-2xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all bg-white text-sm font-medium"
+                    value={editingUser.role}
+                    onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value as 'admin' | 'client' })}
+                  >
+                    <option value="client">Client</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Company</label>
+                  <input
+                    type="text"
+                    className="w-full p-4 rounded-2xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all bg-white text-sm font-medium"
+                    value={editingUser.company || ''}
+                    onChange={(e) => setEditingUser({ ...editingUser, company: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Phone</label>
+                  <input
+                    type="text"
+                    className="w-full p-4 rounded-2xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all bg-white text-sm font-medium"
+                    value={editingUser.phone || ''}
+                    onChange={(e) => setEditingUser({ ...editingUser, phone: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Address</label>
+                  <input
+                    type="text"
+                    className="w-full p-4 rounded-2xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all bg-white text-sm font-medium"
+                    value={editingUser.address || ''}
+                    onChange={(e) => setEditingUser({ ...editingUser, address: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Context / Project Info</label>
+                <textarea
+                  className="w-full p-4 rounded-2xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all bg-white text-sm font-medium min-h-[100px]"
+                  value={editingUser.context || ''}
+                  onChange={(e) => setEditingUser({ ...editingUser, context: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Internal Admin Notes</label>
+                <textarea
+                  className="w-full p-4 rounded-2xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all bg-white text-sm font-medium min-h-[100px]"
+                  value={editingUser.notes || ''}
+                  onChange={(e) => setEditingUser({ ...editingUser, notes: e.target.value })}
+                />
+              </div>
+
+              <div className="pt-4 border-t border-zinc-100">
+                <button 
+                  onClick={() => handleSeedStats(editingUser.uid)}
+                  className="w-full py-3 rounded-xl bg-zinc-100 text-zinc-600 font-bold text-xs hover:bg-zinc-200 transition-all flex items-center justify-center"
+                >
+                  <BarChart3 className="w-4 h-4 mr-2" /> Seed 30-Day Dashboard Stats
+                </button>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => setEditingUser(null)}
+                  className="flex-1 py-4 rounded-2xl border border-zinc-200 font-bold text-zinc-600 hover:bg-zinc-50 transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleUpdateUser(editingUser.uid, { 
+                    role: editingUser.role,
+                    company: editingUser.company || '',
+                    phone: editingUser.phone || '',
+                    address: editingUser.address || '',
+                    context: editingUser.context || '',
+                    notes: editingUser.notes || ''
+                  })}
+                  disabled={isUpdatingUser}
+                  className="flex-1 py-4 rounded-2xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 transition-all disabled:opacity-50 shadow-lg shadow-emerald-600/20"
+                >
+                  {isUpdatingUser ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Edit Order Modal */}
       {editingOrder && (
@@ -872,6 +1556,60 @@ export default function AdminPanel() {
                     className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
                   />
                 </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Monthly Fee (R)</label>
+                  <input 
+                    type="number"
+                    value={editingPlan.monthlyFee}
+                    onChange={(e) => setEditingPlan({...editingPlan, monthlyFee: Number(e.target.value)})}
+                    className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Management Fee (R)</label>
+                  <input 
+                    type="number"
+                    value={editingPlan.managementFee}
+                    onChange={(e) => setEditingPlan({...editingPlan, managementFee: Number(e.target.value)})}
+                    className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Security Fee (R)</label>
+                  <input 
+                    type="number"
+                    value={editingPlan.securityFee}
+                    onChange={(e) => setEditingPlan({...editingPlan, securityFee: Number(e.target.value)})}
+                    className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Monthly Fee (R)</label>
+                  <input 
+                    type="number"
+                    value={editingPlan.monthlyFee}
+                    onChange={(e) => setEditingPlan({...editingPlan, monthlyFee: Number(e.target.value)})}
+                    className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Management Fee (R)</label>
+                  <input 
+                    type="number"
+                    value={editingPlan.managementFee}
+                    onChange={(e) => setEditingPlan({...editingPlan, managementFee: Number(e.target.value)})}
+                    className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Security Fee (R)</label>
+                  <input 
+                    type="number"
+                    value={editingPlan.securityFee}
+                    onChange={(e) => setEditingPlan({...editingPlan, securityFee: Number(e.target.value)})}
+                    className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                  />
+                </div>
                 <div className="space-y-2 sm:col-span-2">
                   <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Description</label>
                   <textarea 
@@ -932,6 +1670,336 @@ export default function AdminPanel() {
                   </>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Toast Notification */}
+      {toast && (
+        <div className="fixed bottom-8 right-8 z-[100] animate-in slide-in-from-right-10 duration-300">
+          <div className={`px-6 py-4 rounded-2xl shadow-2xl flex items-center space-x-3 border ${
+            toast.type === 'success' ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-red-600 border-red-500 text-white'
+          }`}>
+            {toast.type === 'success' ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+            <span className="font-bold text-sm">{toast.message}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Modal */}
+      {confirmModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-sm rounded-[32px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-8 text-center">
+              <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6 ${confirmModal.isDanger ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                <AlertCircle className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-bold text-zinc-900 mb-2">{confirmModal.title}</h3>
+              <p className="text-zinc-500 text-sm leading-relaxed mb-8">{confirmModal.message}</p>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setConfirmModal(null)}
+                  className="flex-1 py-4 rounded-2xl border border-zinc-200 font-bold text-zinc-600 hover:bg-zinc-50 transition-all"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={() => {
+                    confirmModal.onConfirm();
+                    setConfirmModal(null);
+                  }}
+                  className={`flex-1 py-4 rounded-2xl font-bold text-white transition-all ${confirmModal.isDanger ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}
+                >
+                  Confirm
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Generate Quote Modal */}
+      {generatingQuote && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50">
+              <h3 className="text-xl font-bold text-zinc-900">Generate New Quote</h3>
+              <button onClick={() => setGeneratingQuote(null)}><X className="w-6 h-6 text-zinc-400 hover:text-zinc-600" /></button>
+            </div>
+            <div className="p-8 space-y-6">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Client Email</label>
+                <input 
+                  type="email"
+                  value={generatingQuote.clientEmail}
+                  onChange={(e) => setGeneratingQuote({...generatingQuote, clientEmail: e.target.value})}
+                  className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                  placeholder="client@example.com"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Plan Name</label>
+                <input 
+                  type="text"
+                  value={generatingQuote.planName}
+                  onChange={(e) => setGeneratingQuote({...generatingQuote, planName: e.target.value})}
+                  className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                  placeholder="e.g. Custom Business Solution"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Amount (R)</label>
+                <input 
+                  type="number"
+                  value={generatingQuote.amount}
+                  onChange={(e) => setGeneratingQuote({...generatingQuote, amount: Number(e.target.value)})}
+                  className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Requirements</label>
+                <textarea 
+                  value={generatingQuote.requirements}
+                  onChange={(e) => setGeneratingQuote({...generatingQuote, requirements: e.target.value})}
+                  rows={4}
+                  className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all resize-none"
+                  placeholder="Describe the scope of work..."
+                />
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button onClick={() => setGeneratingQuote(null)} className="flex-1 py-3 rounded-xl border border-zinc-200 font-bold text-zinc-600">Cancel</button>
+                <button onClick={handleGenerateQuote} disabled={isSaving} className="flex-1 py-3 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 disabled:opacity-50">
+                  {isSaving ? 'Generating...' : 'Generate Quote'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Announcement Modal */}
+      {editingAnnouncement && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50">
+              <h3 className="text-xl font-bold text-zinc-900">{editingAnnouncement.id ? 'Edit Announcement' : 'New Announcement'}</h3>
+              <button onClick={() => setEditingAnnouncement(null)}><X className="w-6 h-6 text-zinc-400 hover:text-zinc-600" /></button>
+            </div>
+            <div className="p-8 space-y-6">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Title</label>
+                <input 
+                  type="text"
+                  value={editingAnnouncement.title}
+                  onChange={(e) => setEditingAnnouncement({...editingAnnouncement, title: e.target.value})}
+                  className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Content</label>
+                <textarea 
+                  value={editingAnnouncement.content}
+                  onChange={(e) => setEditingAnnouncement({...editingAnnouncement, content: e.target.value})}
+                  rows={4}
+                  className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all resize-none"
+                />
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button onClick={() => setEditingAnnouncement(null)} className="flex-1 py-3 rounded-xl border border-zinc-200 font-bold text-zinc-600">Cancel</button>
+                <button onClick={handleSaveAnnouncement} disabled={isSaving} className="flex-1 py-3 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 disabled:opacity-50">
+                  {isSaving ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Discount Code Modal */}
+      {editingDiscountCode && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50">
+              <h3 className="text-xl font-bold text-zinc-900">{(editingDiscountCode as any).id ? 'Edit Discount' : 'New Discount'}</h3>
+              <button onClick={() => setEditingDiscountCode(null)}><X className="w-6 h-6 text-zinc-400 hover:text-zinc-600" /></button>
+            </div>
+            <div className="p-8 space-y-6">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Code</label>
+                <input 
+                  type="text"
+                  value={editingDiscountCode.code}
+                  onChange={(e) => setEditingDiscountCode({...editingDiscountCode, code: e.target.value.toUpperCase()})}
+                  className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm font-mono focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                  placeholder="e.g. SUMMER20"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Percentage Off (%)</label>
+                <input 
+                  type="number"
+                  value={editingDiscountCode.percentage}
+                  onChange={(e) => setEditingDiscountCode({...editingDiscountCode, percentage: Number(e.target.value)})}
+                  className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                />
+              </div>
+              <div className="flex items-center space-x-3">
+                <input 
+                  type="checkbox"
+                  checked={editingDiscountCode.active}
+                  onChange={(e) => setEditingDiscountCode({...editingDiscountCode, active: e.target.checked})}
+                  className="w-5 h-5 rounded border-zinc-300 text-emerald-600 focus:ring-emerald-500"
+                />
+                <label className="text-sm font-bold text-zinc-700">Active</label>
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button onClick={() => setEditingDiscountCode(null)} className="flex-1 py-3 rounded-xl border border-zinc-200 font-bold text-zinc-600">Cancel</button>
+                <button onClick={handleSaveDiscountCode} disabled={isSaving} className="flex-1 py-3 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 disabled:opacity-50">
+                  {isSaving ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Demo Modal */}
+      {editingDemo && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50">
+              <div>
+                <h3 className="text-xl font-bold text-zinc-900">{editingDemo.id ? 'Edit Demo' : 'Add New Demo'}</h3>
+                {editingDemo.id && <p className="text-xs text-zinc-500 font-mono mt-1">ID: {editingDemo.id}</p>}
+              </div>
+              <button onClick={() => setEditingDemo(null)}><X className="w-6 h-6 text-zinc-400 hover:text-zinc-600" /></button>
+            </div>
+            
+            <div className="p-8 space-y-6 max-h-[70vh] overflow-y-auto">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Demo Title</label>
+                  <input 
+                    type="text"
+                    value={editingDemo.title}
+                    onChange={(e) => setEditingDemo({...editingDemo, title: e.target.value})}
+                    className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                    placeholder="e.g. E-commerce Platform"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Demo URL</label>
+                  <input 
+                    type="url"
+                    value={editingDemo.url}
+                    onChange={(e) => setEditingDemo({...editingDemo, url: e.target.value})}
+                    className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                    placeholder="https://demo.example.com"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Description</label>
+                  <textarea 
+                    value={editingDemo.description}
+                    onChange={(e) => setEditingDemo({...editingDemo, description: e.target.value})}
+                    rows={4}
+                    className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all resize-none"
+                    placeholder="Describe the features and purpose of this demo..."
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Image URL (Optional)</label>
+                  <input 
+                    type="url"
+                    value={editingDemo.imageUrl || ''}
+                    onChange={(e) => setEditingDemo({...editingDemo, imageUrl: e.target.value})}
+                    className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                    placeholder="https://images.unsplash.com/..."
+                  />
+                </div>
+              </div>
+            </div>
+            
+            <div className="p-6 border-t border-zinc-100 bg-zinc-50/50 flex gap-3">
+              <button 
+                onClick={() => setEditingDemo(null)}
+                className="flex-1 px-6 py-3 rounded-xl font-bold text-zinc-600 hover:bg-zinc-100 transition-all"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleSaveDemo}
+                disabled={isSaving}
+                className="flex-1 bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-emerald-700 disabled:opacity-50 transition-all flex items-center justify-center"
+              >
+                {isSaving ? (
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <Save className="w-4 h-4 mr-2" /> {editingDemo.id ? 'Save Changes' : 'Add Demo'}
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Email Modal */}
+      {emailModal && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+          <div className="bg-white w-full max-w-2xl rounded-[40px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-8 border-b border-zinc-100 flex justify-between items-center bg-zinc-50">
+              <div>
+                <h3 className="text-2xl font-black text-zinc-900">Compose Email</h3>
+                <p className="text-zinc-500 text-sm font-medium">Sending to: {emailModal.to}</p>
+              </div>
+              <button onClick={() => setEmailModal(null)} className="p-2 hover:bg-white rounded-full transition-colors">
+                <X className="w-6 h-6 text-zinc-400 hover:text-zinc-600" />
+              </button>
+            </div>
+            
+            <div className="p-8 space-y-6">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest ml-1">Subject</label>
+                <input
+                  type="text"
+                  className="w-full p-4 rounded-2xl border border-zinc-200 focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all font-medium"
+                  value={emailModal.subject}
+                  onChange={(e) => setEmailModal({ ...emailModal, subject: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest ml-1">Message Content</label>
+                <textarea
+                  className="w-full p-4 rounded-2xl border border-zinc-200 focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all font-medium min-h-[250px]"
+                  value={emailModal.content}
+                  onChange={(e) => setEmailModal({ ...emailModal, content: e.target.value })}
+                />
+              </div>
+
+              <div className="flex gap-4 pt-4">
+                <button
+                  onClick={() => setEmailModal(null)}
+                  className="flex-1 py-5 rounded-2xl border border-zinc-200 font-bold text-zinc-600 hover:bg-zinc-50 transition-all"
+                >
+                  Discard
+                </button>
+                <button
+                  onClick={handleSendEmail}
+                  disabled={isSendingEmail}
+                  className="flex-1 py-5 rounded-2xl bg-emerald-600 text-white font-black text-lg hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-600/20 flex items-center justify-center disabled:opacity-50"
+                >
+                  {isSendingEmail ? (
+                    <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <Mail className="w-6 h-6 mr-2" />
+                      Send & Log
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>
