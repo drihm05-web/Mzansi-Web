@@ -2,7 +2,7 @@ export interface UserProfile {
   uid: string;
   email: string;
   name: string;
-  role: 'client' | 'admin';
+  role: 'client' | 'admin' | 'csr';
   createdAt: string;
   context?: string;
   notes?: string;

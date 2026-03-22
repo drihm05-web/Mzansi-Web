@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, orderBy, limit, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, limit, doc, getDoc, addDoc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Order, Announcement, UserStat, Quote } from '../types';
@@ -8,7 +8,7 @@ import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { STATS } from '../constants';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
-import { addDoc } from 'firebase/firestore';
+import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI } from "@google/genai";
 
 export default function Dashboard() {
@@ -116,7 +116,10 @@ export default function Dashboard() {
       let aiVision = '';
       let aiVisionImage = '';
       try {
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey) throw new Error('GEMINI_API_KEY is missing');
+        
+        const ai = new GoogleGenAI({ apiKey });
         
         // Text Vision
         const textPrompt = `As a senior web architect, generate a visionary project blueprint for a client who wants a ${projectDetails.platform} platform. 
@@ -132,7 +135,7 @@ export default function Dashboard() {
           model: "gemini-3-flash-preview",
           contents: textPrompt
         });
-        aiVision = textResult.text || '';
+        aiVision = textResult.text || 'Our architects are currently drafting your custom blueprint.';
 
         // Image Vision
         const imagePrompt = `A futuristic, high-tech architectural blueprint of a ${projectDetails.platform} website. 
@@ -152,10 +155,12 @@ export default function Dashboard() {
           }
         });
 
-        for (const part of imageResult.candidates[0].content.parts) {
-          if (part.inlineData) {
-            aiVisionImage = `data:image/png;base64,${part.inlineData.data}`;
-            break;
+        if (imageResult.candidates?.[0]?.content?.parts) {
+          for (const part of imageResult.candidates[0].content.parts) {
+            if (part.inlineData) {
+              aiVisionImage = `data:image/png;base64,${part.inlineData.data}`;
+              break;
+            }
           }
         }
       } catch (aiErr) {
@@ -476,6 +481,101 @@ export default function Dashboard() {
       </div>
 
       {/* Statistics Section */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+        {stats.length > 0 ? (
+          <>
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-white p-6 rounded-[32px] border border-zinc-200 shadow-sm hover:shadow-md transition-all group"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <ShieldCheck className="w-6 h-6 text-emerald-600" />
+                </div>
+                <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest bg-emerald-50 px-2 py-1 rounded-full">Live</span>
+              </div>
+              <p className="text-zinc-500 text-xs font-bold uppercase tracking-wider mb-1">DDoS Mitigations</p>
+              <h3 className="text-3xl font-black text-zinc-900 tabular-nums">
+                {stats[stats.length - 1].mitigations.toLocaleString()}
+              </h3>
+            </motion.div>
+
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className="bg-white p-6 rounded-[32px] border border-zinc-200 shadow-sm hover:shadow-md transition-all group"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <Zap className="w-6 h-6 text-blue-600" />
+                </div>
+                <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 px-2 py-1 rounded-full">Uptime</span>
+              </div>
+              <p className="text-zinc-500 text-xs font-bold uppercase tracking-wider mb-1">Network Stability</p>
+              <h3 className="text-3xl font-black text-zinc-900 tabular-nums">
+                {stats[stats.length - 1].uptime}%
+              </h3>
+            </motion.div>
+
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="bg-white p-6 rounded-[32px] border border-zinc-200 shadow-sm hover:shadow-md transition-all group"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div className="w-12 h-12 bg-amber-50 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <Globe className="w-6 h-6 text-amber-600" />
+                </div>
+                <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest bg-amber-50 px-2 py-1 rounded-full">Traffic</span>
+              </div>
+              <p className="text-zinc-500 text-xs font-bold uppercase tracking-wider mb-1">Total Requests</p>
+              <h3 className="text-3xl font-black text-zinc-900 tabular-nums">
+                {stats[stats.length - 1].requests.toLocaleString()}
+              </h3>
+            </motion.div>
+
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+              className="bg-white p-6 rounded-[32px] border border-zinc-200 shadow-sm hover:shadow-md transition-all group"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div className="w-12 h-12 bg-zinc-100 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <Clock className="w-6 h-6 text-zinc-600" />
+                </div>
+                <span className="text-[10px] font-black text-zinc-600 uppercase tracking-widest bg-zinc-100 px-2 py-1 rounded-full">Latency</span>
+              </div>
+              <p className="text-zinc-500 text-xs font-bold uppercase tracking-wider mb-1">Avg. Response</p>
+              <h3 className="text-3xl font-black text-zinc-900 tabular-nums">
+                0.8s
+              </h3>
+            </motion.div>
+          </>
+        ) : (
+          STATS.map((stat, i) => (
+            <motion.div 
+              key={i}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.1 }}
+              className="bg-white p-6 rounded-[32px] border border-zinc-200 shadow-sm"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div className="w-12 h-12 bg-zinc-50 rounded-2xl flex items-center justify-center">
+                  <Shield className="w-6 h-6 text-zinc-400" />
+                </div>
+              </div>
+              <p className="text-zinc-500 text-xs font-bold uppercase tracking-wider mb-1">{stat.label}</p>
+              <h3 className="text-3xl font-black text-zinc-900">{stat.value}</h3>
+            </motion.div>
+          ))
+        )}
+      </div>
+
       <div className="mb-12">
         <div className="bg-white p-8 rounded-[32px] border border-zinc-200 shadow-sm">
           <div className="flex items-center justify-between mb-8">

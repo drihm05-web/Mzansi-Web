@@ -6,18 +6,21 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
+import ChatWidget from './components/ChatWidget';
+import Servicing from './pages/Servicing';
 import Dashboard from './pages/Dashboard';
 import AdminPanel from './pages/AdminPanel';
 import OrderPage from './pages/OrderPage';
 import Demos from './pages/Demos';
 import Profile from './pages/Profile';
-import { Shield, Menu, X, User, LogOut, LayoutDashboard, Settings, Globe } from 'lucide-react';
+import { Shield, Menu, X, User, LogOut, LayoutDashboard, Settings, Globe, Mail } from 'lucide-react';
 import { useState } from 'react';
 import { auth } from './firebase';
 
 const Navbar = () => {
   const { user, profile, isAdmin } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
+  const isCSR = profile?.role === 'csr' || isAdmin;
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-b border-zinc-200">
@@ -45,6 +48,12 @@ const Navbar = () => {
                   <LayoutDashboard className="w-4 h-4" />
                   <span>Dashboard</span>
                 </Link>
+                {isCSR && (
+                  <Link to="/servicing" className="flex items-center space-x-1 text-zinc-600 hover:text-zinc-900 font-medium">
+                    <Mail className="w-4 h-4" />
+                    <span>Servicing</span>
+                  </Link>
+                )}
                 <Link to="/profile" className="flex items-center space-x-1 text-zinc-600 hover:text-zinc-900 font-medium">
                   <User className="w-4 h-4" />
                   <span>Profile</span>
@@ -89,6 +98,7 @@ const Navbar = () => {
           {user ? (
             <>
               <Link to="/dashboard" className="block text-zinc-600 font-medium" onClick={() => setIsOpen(false)}>Dashboard</Link>
+              {isCSR && <Link to="/servicing" className="block text-zinc-600 font-medium" onClick={() => setIsOpen(false)}>Servicing</Link>}
               <Link to="/profile" className="block text-zinc-600 font-medium" onClick={() => setIsOpen(false)}>Profile</Link>
               {isAdmin && <Link to="/admin" className="block text-zinc-600 font-medium" onClick={() => setIsOpen(false)}>Admin Panel</Link>}
               <button onClick={() => { auth.signOut(); setIsOpen(false); }} className="block text-red-600 font-medium">Logout</button>
@@ -105,12 +115,15 @@ const Navbar = () => {
   );
 };
 
-const ProtectedRoute = ({ children, adminOnly = false }: { children: React.ReactNode, adminOnly?: boolean }) => {
-  const { user, loading, isAdmin } = useAuth();
+const ProtectedRoute = ({ children, adminOnly = false, csrOnly = false }: { children: React.ReactNode, adminOnly?: boolean, csrOnly?: boolean }) => {
+  const { user, loading, isAdmin, profile } = useAuth();
   
   if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   if (!user) return <Navigate to="/login" />;
+  
   if (adminOnly && !isAdmin) return <Navigate to="/dashboard" />;
+  
+  if (csrOnly && !isAdmin && profile?.role !== 'csr') return <Navigate to="/dashboard" />;
   
   return <>{children}</>;
 };
@@ -139,6 +152,11 @@ export default function App() {
                     <AdminPanel />
                   </ProtectedRoute>
                 } />
+                <Route path="/servicing" element={
+                  <ProtectedRoute csrOnly>
+                    <Servicing />
+                  </ProtectedRoute>
+                } />
                 <Route path="/order/:planId" element={
                   <ProtectedRoute>
                     <OrderPage />
@@ -153,6 +171,7 @@ export default function App() {
                 <Route path="*" element={<Navigate to="/" />} />
               </Routes>
             </div>
+            <ChatWidget />
           </div>
         </Router>
       </AuthProvider>

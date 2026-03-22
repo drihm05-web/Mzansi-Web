@@ -8,14 +8,16 @@ import {
   CheckCircle, Clock, AlertCircle, ExternalLink, Zap, 
   Link as LinkIcon, Info, LayoutDashboard, Database, Users,
   Tag, Calendar, ChevronRight, Search, CreditCard, Settings,
-  FileText, Mail, BarChart3, TrendingUp, User
+  FileText, Mail, BarChart3, TrendingUp, User, Shield, MessageSquare
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 
-type TabType = 'orders' | 'users' | 'plans' | 'marketing' | 'demos' | 'settings' | 'crm';
+type TabType = 'orders' | 'users' | 'plans' | 'marketing' | 'demos' | 'settings' | 'crm' | 'servicing';
 
 export default function AdminPanel() {
   const [activeTab, setActiveTab] = useState<TabType>('orders');
+  const navigate = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -207,25 +209,65 @@ export default function AdminPanel() {
     if (!emailModal || !emailModal.subject || !emailModal.content) return;
     setIsSendingEmail(true);
     try {
-      await addDoc(collection(db, 'emailLogs'), {
-        to: emailModal.to,
-        subject: emailModal.subject,
-        content: emailModal.content,
-        sentAt: new Date().toISOString(),
-        status: 'sent'
+      const response = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          to: emailModal.to,
+          subject: emailModal.subject,
+          content: emailModal.content,
+        }),
       });
-      
-      // Simulate sending by opening mailto
-      const mailtoUrl = `mailto:${emailModal.to}?subject=${encodeURIComponent(emailModal.subject)}&body=${encodeURIComponent(emailModal.content)}`;
-      window.location.href = mailtoUrl;
-      
-      setEmailModal(null);
-      setToast({ message: 'Email logged and client mailer opened!', type: 'success' });
+
+      const result = await response.json();
+
+      if (result.success) {
+        await addDoc(collection(db, 'emailLogs'), {
+          to: emailModal.to,
+          subject: emailModal.subject,
+          content: emailModal.content,
+          sentAt: new Date().toISOString(),
+          status: 'sent',
+          type: 'outbound'
+        });
+        setToast({ message: 'Email sent and logged successfully!', type: 'success' });
+        setEmailModal(null);
+      } else {
+        await addDoc(collection(db, 'emailLogs'), {
+          to: emailModal.to,
+          subject: emailModal.subject,
+          content: emailModal.content,
+          sentAt: new Date().toISOString(),
+          status: 'failed',
+          type: 'outbound',
+          error: result.message
+        });
+        setToast({ message: `Failed to send email: ${result.message}`, type: 'error' });
+      }
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, 'emailLogs');
+      console.error('Error sending email:', err);
+      setToast({ message: 'An error occurred while sending the email.', type: 'error' });
     } finally {
       setIsSendingEmail(false);
     }
+  };
+
+  const handleDeleteEmailLog = async (id: string) => {
+    setConfirmModal({
+      title: 'Delete Email Log',
+      message: 'Are you sure you want to delete this email log?',
+      isDanger: true,
+      onConfirm: async () => {
+        try {
+          await deleteDoc(doc(db, 'emailLogs', id));
+          setToast({ message: 'Email log deleted successfully!', type: 'success' });
+        } catch (err) {
+          handleFirestoreError(err, OperationType.DELETE, `emailLogs/${id}`);
+        }
+      }
+    });
   };
 
   const handleDeleteUser = async (uid: string) => {
@@ -403,6 +445,7 @@ export default function AdminPanel() {
   };
 
   const handleDeletePlan = async (id: string) => {
+    console.log('Attempting to delete plan:', id);
     setConfirmModal({
       title: 'Delete Plan',
       message: 'Are you sure you want to delete this plan? This may affect existing orders.',
@@ -410,7 +453,9 @@ export default function AdminPanel() {
       onConfirm: async () => {
         try {
           await deleteDoc(doc(db, 'plans', id));
+          setToast({ message: 'Plan deleted successfully!', type: 'success' });
         } catch (err) {
+          console.error('Delete plan error:', err);
           handleFirestoreError(err, OperationType.DELETE, `plans/${id}`);
         }
       }
@@ -526,6 +571,7 @@ export default function AdminPanel() {
   const tabs = [
     { id: 'orders', label: 'Orders', icon: Package },
     { id: 'crm', label: 'CRM', icon: Users },
+    { id: 'servicing', label: 'Servicing', icon: Mail },
     { id: 'marketing', label: 'Marketing', icon: TrendingUp },
     { id: 'plans', label: 'Plans', icon: Database },
     { id: 'demos', label: 'Demos', icon: Globe },
@@ -570,6 +616,53 @@ export default function AdminPanel() {
 
       {/* Tab Content */}
       <div className="space-y-8">
+        {activeTab === 'servicing' && (
+          <div className="space-y-8">
+            <div className="bg-zinc-900 p-12 rounded-[40px] text-white overflow-hidden relative">
+              <div className="absolute top-0 right-0 p-12 opacity-10">
+                <Mail className="w-48 h-48" />
+              </div>
+              <div className="relative z-10 max-w-2xl">
+                <h2 className="text-4xl font-black mb-4 tracking-tight">CSR Servicing Center</h2>
+                <p className="text-zinc-400 text-lg mb-8">Manage real-time customer support, chat history, and agent performance from our dedicated servicing portal.</p>
+                <button 
+                  onClick={() => navigate('/servicing')}
+                  className="bg-emerald-500 text-white px-8 py-4 rounded-2xl font-black text-lg hover:bg-emerald-600 transition-all flex items-center shadow-xl shadow-emerald-500/20"
+                >
+                  Open Servicing Portal <ExternalLink className="w-5 h-5 ml-3" />
+                </button>
+              </div>
+            </div>
+
+            <div className="grid md:grid-cols-3 gap-8">
+              <div className="bg-white p-8 rounded-[40px] border border-zinc-200 shadow-sm">
+                <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center mb-6">
+                  <MessageSquare className="w-6 h-6 text-emerald-600" />
+                </div>
+                <h3 className="text-xl font-bold text-zinc-900 mb-2">Live Chats</h3>
+                <p className="text-zinc-500 text-sm mb-4">Monitor active conversations between agents and customers.</p>
+                <div className="text-3xl font-black text-zinc-900">Active</div>
+              </div>
+              <div className="bg-white p-8 rounded-[40px] border border-zinc-200 shadow-sm">
+                <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center mb-6">
+                  <Users className="w-6 h-6 text-blue-600" />
+                </div>
+                <h3 className="text-xl font-bold text-zinc-900 mb-2">Agent Logs</h3>
+                <p className="text-zinc-500 text-sm mb-4">Track CSR activity, response times, and resolution rates.</p>
+                <div className="text-3xl font-black text-zinc-900">Logged</div>
+              </div>
+              <div className="bg-white p-8 rounded-[40px] border border-zinc-200 shadow-sm">
+                <div className="w-12 h-12 bg-amber-50 rounded-2xl flex items-center justify-center mb-6">
+                  <Shield className="w-6 h-6 text-amber-600" />
+                </div>
+                <h3 className="text-xl font-bold text-zinc-900 mb-2">Security</h3>
+                <p className="text-zinc-500 text-sm mb-4">Encrypted communication logs for compliance and auditing.</p>
+                <div className="text-3xl font-black text-zinc-900">Secure</div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {activeTab === 'settings' && (
           <div className="space-y-12">
             <div className="flex items-center justify-between">
@@ -1233,10 +1326,23 @@ export default function AdminPanel() {
                 <div className="bg-white rounded-3xl border border-zinc-200 shadow-sm overflow-hidden">
                   <div className="divide-y divide-zinc-100">
                     {emailLogs.length > 0 ? emailLogs.map(log => (
-                      <div key={log.id} className="p-4 hover:bg-zinc-50 transition-colors">
+                      <div key={log.id} className="p-4 hover:bg-zinc-50 transition-colors group">
                         <div className="flex justify-between items-start mb-1">
                           <p className="text-sm font-bold text-zinc-900">{log.subject}</p>
-                          <span className="text-[10px] font-bold text-emerald-600 uppercase">Sent</span>
+                          <div className="flex items-center space-x-2">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
+                              log.status === 'sent' ? 'bg-emerald-50 text-emerald-600' : 
+                              log.status === 'failed' ? 'bg-red-50 text-red-600' : 'bg-zinc-100 text-zinc-600'
+                            }`}>
+                              {log.status}
+                            </span>
+                            <button 
+                              onClick={() => handleDeleteEmailLog(log.id)}
+                              className="p-1 text-zinc-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
                         </div>
                         <p className="text-xs text-zinc-500 mb-2">To: {log.to}</p>
                         <p className="text-[10px] text-zinc-400">{format(new Date(log.sentAt), 'PPP p')}</p>
@@ -1407,10 +1513,11 @@ export default function AdminPanel() {
                   <select
                     className="w-full p-4 rounded-2xl border border-zinc-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all bg-white text-sm font-medium"
                     value={editingUser.role}
-                    onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value as 'admin' | 'client' })}
+                    onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value as any })}
                   >
                     <option value="client">Client</option>
                     <option value="admin">Admin</option>
+                    <option value="csr">CSR Agent</option>
                   </select>
                 </div>
                 <div>
