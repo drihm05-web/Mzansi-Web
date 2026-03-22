@@ -161,7 +161,7 @@ export default function Login() {
                 placeholder="you@example.com"
               />
             </div>
-            <div>
+            <div className="space-y-1">
               <label className="block text-sm font-bold text-zinc-700 mb-2">Password</label>
               <input
                 type="password"
@@ -171,6 +171,11 @@ export default function Login() {
                 className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
                 placeholder="••••••••"
               />
+              <div className="flex justify-end">
+                <Link to="/forgot-password" title="Forgot Password" className="text-xs font-bold text-emerald-600 hover:underline">
+                  Forgot Password?
+                </Link>
+              </div>
             </div>
             
             <div className="flex flex-col space-y-3">

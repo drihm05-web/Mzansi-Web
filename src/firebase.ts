@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getAuth, sendPasswordResetEmail, confirmPasswordReset, verifyPasswordResetCode } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
@@ -7,6 +7,8 @@ const app = initializeApp(firebaseConfig);
 // Use the database ID from config if present, otherwise default
 export const db = getFirestore(app, (firebaseConfig as any).firestoreDatabaseId || '(default)');
 export const auth = getAuth(app);
+
+export { sendPasswordResetEmail, confirmPasswordReset, verifyPasswordResetCode };
 
 // Test connection to Firestore
 async function testConnection() {
