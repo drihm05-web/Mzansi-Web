@@ -186,9 +186,17 @@ export default function LandingPage() {
                   )}
                   <div className="mb-8">
                     <h3 className="text-xl font-bold text-zinc-900 mb-2">{plan.name}</h3>
-                    <div className="flex items-baseline mb-4">
-                      <span className="text-4xl font-bold text-zinc-900">R{plan.price}</span>
-                      <span className="text-zinc-500 ml-2">once-off</span>
+                    <div className="flex flex-col mb-4">
+                      <div className="flex items-baseline">
+                        <span className="text-4xl font-bold text-zinc-900">R{plan.price}</span>
+                        <span className="text-zinc-500 ml-2">once-off</span>
+                      </div>
+                      {(plan.monthlyFee || 0) > 0 && (
+                        <div className="flex items-baseline mt-1">
+                          <span className="text-lg font-bold text-emerald-600">R{plan.monthlyFee + (plan.managementFee || 0) + (plan.securityFee || 0)}</span>
+                          <span className="text-zinc-400 text-xs ml-2">p/m maintenance</span>
+                        </div>
+                      )}
                     </div>
                     <p className="text-zinc-600 text-sm leading-relaxed">{plan.description}</p>
                   </div>

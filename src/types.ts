@@ -86,6 +86,7 @@ export interface Order {
   customRequirements?: string;
   requirements?: ProjectRequirements;
   aiVision?: string;
+  aiVisionImage?: string;
   budget?: number;
 }
 

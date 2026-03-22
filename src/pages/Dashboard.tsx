@@ -114,10 +114,12 @@ export default function Dashboard() {
     try {
       // Generate AI Vision
       let aiVision = '';
+      let aiVisionImage = '';
       try {
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-        const model = "gemini-3-flash-preview";
-        const prompt = `As a senior web architect, generate a visionary project blueprint for a client who wants a ${projectDetails.platform} platform. 
+        
+        // Text Vision
+        const textPrompt = `As a senior web architect, generate a visionary project blueprint for a client who wants a ${projectDetails.platform} platform. 
         Requirements:
         - Payment Gateway: ${projectDetails.paymentGateway}
         - Security: ${projectDetails.securityLevel}
@@ -126,11 +128,36 @@ export default function Dashboard() {
         
         Provide a 3-sentence high-level technical vision that sounds futuristic and professional.`;
         
-        const result = await ai.models.generateContent({
-          model,
-          contents: prompt
+        const textResult = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: textPrompt
         });
-        aiVision = result.text || '';
+        aiVision = textResult.text || '';
+
+        // Image Vision
+        const imagePrompt = `A futuristic, high-tech architectural blueprint of a ${projectDetails.platform} website. 
+        Cyberpunk aesthetic, emerald green and dark zinc colors. 
+        Showing network nodes, security shields, and clean UI components. 
+        Professional, enterprise-grade, 3D isometric view.`;
+        
+        const imageResult = await ai.models.generateContent({
+          model: 'gemini-2.5-flash-image',
+          contents: {
+            parts: [{ text: imagePrompt }]
+          },
+          config: {
+            imageConfig: {
+              aspectRatio: "16:9",
+            }
+          }
+        });
+
+        for (const part of imageResult.candidates[0].content.parts) {
+          if (part.inlineData) {
+            aiVisionImage = `data:image/png;base64,${part.inlineData.data}`;
+            break;
+          }
+        }
       } catch (aiErr) {
         console.error('AI Generation failed:', aiErr);
         aiVision = 'Our architects are currently drafting your custom blueprint.';
@@ -147,6 +174,7 @@ export default function Dashboard() {
         customRequirements: customRequirements || projectDetails.specifics,
         requirements: projectDetails,
         aiVision,
+        aiVisionImage,
         budget: customBudget
       });
       setCustomRequirements('');
@@ -292,16 +320,28 @@ export default function Dashboard() {
 
               {/* AI Vision Section */}
               {selectedOrder.aiVision && (
-                <div className="bg-emerald-50 p-8 rounded-[32px] border border-emerald-100 relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:scale-110 transition-transform">
-                    <Zap className="w-16 h-16 text-emerald-600" />
+                <div className="bg-emerald-50 rounded-[32px] border border-emerald-100 relative overflow-hidden group">
+                  {selectedOrder.aiVisionImage && (
+                    <div className="aspect-video w-full overflow-hidden border-b border-emerald-100">
+                      <img 
+                        src={selectedOrder.aiVisionImage} 
+                        alt="AI Vision Blueprint" 
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
+                  )}
+                  <div className="p-8">
+                    <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:scale-110 transition-transform">
+                      <Zap className="w-16 h-16 text-emerald-600" />
+                    </div>
+                    <h4 className="text-emerald-900 font-black text-xs uppercase tracking-[0.2em] mb-4 flex items-center">
+                      <Zap className="w-4 h-4 mr-2" /> AI Project Blueprint
+                    </h4>
+                    <p className="text-emerald-800 text-sm italic leading-relaxed relative z-10 font-medium">
+                      "{selectedOrder.aiVision}"
+                    </p>
                   </div>
-                  <h4 className="text-emerald-900 font-black text-xs uppercase tracking-[0.2em] mb-4 flex items-center">
-                    <Zap className="w-4 h-4 mr-2" /> AI Project Blueprint
-                  </h4>
-                  <p className="text-emerald-800 text-sm italic leading-relaxed relative z-10 font-medium">
-                    "{selectedOrder.aiVision}"
-                  </p>
                 </div>
               )}
 

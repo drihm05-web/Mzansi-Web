@@ -31,6 +31,14 @@ export default function AdminPanel() {
     branchCode: '',
     instructions: ''
   });
+  const [emailSettings, setEmailSettings] = useState({
+    smtpHost: '',
+    smtpPort: '587',
+    smtpUser: '',
+    smtpPass: '',
+    senderEmail: '',
+    senderName: 'Mzansi Web Solutions'
+  });
   const [loading, setLoading] = useState(true);
   
   // Modal states
@@ -117,6 +125,12 @@ export default function AdminPanel() {
       }
     });
 
+    const unsubscribeEmailSettings = onSnapshot(doc(db, 'settings', 'email'), (snapshot) => {
+      if (snapshot.exists()) {
+        setEmailSettings(snapshot.data() as any);
+      }
+    });
+
     return () => {
       unsubscribeOrders();
       unsubscribeUsers();
@@ -127,6 +141,7 @@ export default function AdminPanel() {
       unsubscribeQuotes();
       unsubscribeEmails();
       unsubscribeSettings();
+      unsubscribeEmailSettings();
     };
   }, []);
 
@@ -356,6 +371,18 @@ export default function AdminPanel() {
     }
   };
 
+  const handleSaveEmailSettings = async () => {
+    setIsSaving(true);
+    try {
+      await setDoc(doc(db, 'settings', 'email'), emailSettings);
+      setToast({ message: 'Email settings saved successfully!', type: 'success' });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, 'settings/email');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleSeedPlans = async () => {
     setConfirmModal({
       title: 'Seed Plans',
@@ -500,9 +527,9 @@ export default function AdminPanel() {
     { id: 'orders', label: 'Orders', icon: Package },
     { id: 'crm', label: 'CRM', icon: Users },
     { id: 'marketing', label: 'Marketing', icon: TrendingUp },
-    { id: 'users', label: 'Users', icon: Settings },
     { id: 'plans', label: 'Plans', icon: Database },
     { id: 'demos', label: 'Demos', icon: Globe },
+    { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
   return (
@@ -543,6 +570,159 @@ export default function AdminPanel() {
 
       {/* Tab Content */}
       <div className="space-y-8">
+        {activeTab === 'settings' && (
+          <div className="space-y-12">
+            <div className="flex items-center justify-between">
+              <h2 className="text-3xl font-black text-zinc-900 flex items-center">
+                <Settings className="w-8 h-8 mr-3 text-emerald-600" />
+                System Settings
+              </h2>
+            </div>
+
+            <div className="grid lg:grid-cols-2 gap-8">
+              {/* Payment Settings */}
+              <div className="bg-white p-8 rounded-[32px] border border-zinc-200 shadow-sm space-y-6">
+                <div className="flex items-center space-x-3 mb-2">
+                  <div className="p-2 bg-emerald-50 rounded-xl">
+                    <CreditCard className="w-5 h-5 text-emerald-600" />
+                  </div>
+                  <h3 className="font-bold text-zinc-900">Payment (EFT) Details</h3>
+                </div>
+                
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Bank Name</label>
+                    <input 
+                      type="text"
+                      value={eftDetails.bankName}
+                      onChange={(e) => setEftDetails({...eftDetails, bankName: e.target.value})}
+                      className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Account Holder</label>
+                    <input 
+                      type="text"
+                      value={eftDetails.accountHolder}
+                      onChange={(e) => setEftDetails({...eftDetails, accountHolder: e.target.value})}
+                      className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Account Number</label>
+                    <input 
+                      type="text"
+                      value={eftDetails.accountNumber}
+                      onChange={(e) => setEftDetails({...eftDetails, accountNumber: e.target.value})}
+                      className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Branch Code</label>
+                    <input 
+                      type="text"
+                      value={eftDetails.branchCode}
+                      onChange={(e) => setEftDetails({...eftDetails, branchCode: e.target.value})}
+                      className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Instructions</label>
+                  <textarea 
+                    value={eftDetails.instructions}
+                    onChange={(e) => setEftDetails({...eftDetails, instructions: e.target.value})}
+                    rows={3}
+                    className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none resize-none"
+                  />
+                </div>
+                <button 
+                  onClick={handleSaveSettings}
+                  disabled={isSaving}
+                  className="w-full bg-zinc-900 text-white py-4 rounded-2xl font-bold hover:bg-zinc-800 transition-all flex items-center justify-center shadow-lg shadow-zinc-200"
+                >
+                  {isSaving ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Save Payment Details'}
+                </button>
+              </div>
+
+              {/* Email Settings */}
+              <div className="bg-white p-8 rounded-[32px] border border-zinc-200 shadow-sm space-y-6">
+                <div className="flex items-center space-x-3 mb-2">
+                  <div className="p-2 bg-blue-50 rounded-xl">
+                    <Mail className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <h3 className="font-bold text-zinc-900">Email (SMTP) Configuration</h3>
+                </div>
+
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">SMTP Host</label>
+                    <input 
+                      type="text"
+                      value={emailSettings.smtpHost}
+                      onChange={(e) => setEmailSettings({...emailSettings, smtpHost: e.target.value})}
+                      className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                      placeholder="smtp.example.com"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">SMTP Port</label>
+                    <input 
+                      type="text"
+                      value={emailSettings.smtpPort}
+                      onChange={(e) => setEmailSettings({...emailSettings, smtpPort: e.target.value})}
+                      className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                      placeholder="587"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">SMTP User</label>
+                    <input 
+                      type="text"
+                      value={emailSettings.smtpUser}
+                      onChange={(e) => setEmailSettings({...emailSettings, smtpUser: e.target.value})}
+                      className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">SMTP Password</label>
+                    <input 
+                      type="password"
+                      value={emailSettings.smtpPass}
+                      onChange={(e) => setEmailSettings({...emailSettings, smtpPass: e.target.value})}
+                      className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Sender Email</label>
+                    <input 
+                      type="email"
+                      value={emailSettings.senderEmail}
+                      onChange={(e) => setEmailSettings({...emailSettings, senderEmail: e.target.value})}
+                      className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Sender Name</label>
+                    <input 
+                      type="text"
+                      value={emailSettings.senderName}
+                      onChange={(e) => setEmailSettings({...emailSettings, senderName: e.target.value})}
+                      className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+                </div>
+                <button 
+                  onClick={handleSaveEmailSettings}
+                  disabled={isSaving}
+                  className="w-full bg-zinc-900 text-white py-4 rounded-2xl font-bold hover:bg-zinc-800 transition-all flex items-center justify-center shadow-lg shadow-zinc-200"
+                >
+                  {isSaving ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Save Email Configuration'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         {activeTab === 'crm' && (
           <div className="space-y-12">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -758,12 +938,24 @@ export default function AdminPanel() {
                                 <div className="flex items-center text-xs font-bold text-emerald-600 uppercase tracking-widest">
                                   <Zap className="w-3 h-3 mr-2" /> AI Generated Blueprint
                                 </div>
-                                <div className="bg-emerald-50/50 p-4 rounded-2xl border border-emerald-100 min-h-[100px]">
-                                  {order.aiVision ? (
-                                    <p className="text-xs text-emerald-800 italic leading-relaxed">{order.aiVision}</p>
-                                  ) : (
-                                    <p className="text-xs text-zinc-400 italic leading-relaxed">No AI vision generated yet.</p>
+                                <div className="bg-emerald-50/50 rounded-2xl border border-emerald-100 overflow-hidden group">
+                                  {order.aiVisionImage && (
+                                    <div className="aspect-video w-full overflow-hidden border-b border-emerald-100">
+                                      <img 
+                                        src={order.aiVisionImage} 
+                                        alt="AI Vision Blueprint" 
+                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                                        referrerPolicy="no-referrer"
+                                      />
+                                    </div>
                                   )}
+                                  <div className="p-4">
+                                    {order.aiVision ? (
+                                      <p className="text-xs text-emerald-800 italic leading-relaxed font-medium">"{order.aiVision}"</p>
+                                    ) : (
+                                      <p className="text-xs text-zinc-400 italic leading-relaxed">No AI vision generated yet.</p>
+                                    )}
+                                  </div>
                                 </div>
                                 <div className="bg-white p-4 rounded-2xl border border-zinc-100">
                                   <p className="text-[10px] text-zinc-400 uppercase font-bold mb-1">Original Design Brief</p>
@@ -887,7 +1079,14 @@ export default function AdminPanel() {
                   <div className="flex justify-between items-start">
                     <div>
                       <h3 className="font-bold text-zinc-900">{plan.name}</h3>
-                      <p className="text-2xl font-black text-emerald-600 mt-1">R{plan.price}</p>
+                      <div className="flex items-baseline space-x-2 mt-1">
+                        <p className="text-2xl font-black text-emerald-600">R{plan.price}</p>
+                        <p className="text-[10px] font-bold text-zinc-400 uppercase">Once-off</p>
+                      </div>
+                      <div className="flex items-baseline space-x-2">
+                        <p className="text-sm font-bold text-zinc-900">R{plan.monthlyFee + (plan.managementFee || 0) + (plan.securityFee || 0)}</p>
+                        <p className="text-[10px] font-bold text-zinc-400 uppercase">Per Month</p>
+                      </div>
                     </div>
                     <div className="flex space-x-2">
                       <button 
@@ -1187,90 +1386,6 @@ export default function AdminPanel() {
             </div>
           </div>
         )}
-        {activeTab === 'settings' && (
-          <div className="max-w-4xl space-y-8">
-            <div className="bg-white p-8 rounded-[40px] border border-zinc-200 shadow-sm">
-              <div className="flex items-center mb-8">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center mr-4">
-                  <CreditCard className="w-6 h-6 text-emerald-600" />
-                </div>
-                <div>
-                  <h2 className="text-2xl font-bold text-zinc-900">Payment Settings</h2>
-                  <p className="text-zinc-500 text-sm">Configure your EFT details for customer payments</p>
-                </div>
-              </div>
-
-              <div className="grid sm:grid-cols-2 gap-8">
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Bank Name</label>
-                  <input 
-                    type="text"
-                    value={eftDetails.bankName}
-                    onChange={(e) => setEftDetails({...eftDetails, bankName: e.target.value})}
-                    className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-6 py-4 text-sm focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all"
-                    placeholder="e.g. First National Bank"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Account Holder</label>
-                  <input 
-                    type="text"
-                    value={eftDetails.accountHolder}
-                    onChange={(e) => setEftDetails({...eftDetails, accountHolder: e.target.value})}
-                    className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-6 py-4 text-sm focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all"
-                    placeholder="e.g. Design Agency PTY LTD"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Account Number</label>
-                  <input 
-                    type="text"
-                    value={eftDetails.accountNumber}
-                    onChange={(e) => setEftDetails({...eftDetails, accountNumber: e.target.value})}
-                    className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-6 py-4 text-sm focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all"
-                    placeholder="e.g. 62812345678"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Branch Code</label>
-                  <input 
-                    type="text"
-                    value={eftDetails.branchCode}
-                    onChange={(e) => setEftDetails({...eftDetails, branchCode: e.target.value})}
-                    className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-6 py-4 text-sm focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all"
-                    placeholder="e.g. 250655"
-                  />
-                </div>
-                <div className="space-y-2 sm:col-span-2">
-                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Payment Instructions</label>
-                  <textarea 
-                    value={eftDetails.instructions}
-                    onChange={(e) => setEftDetails({...eftDetails, instructions: e.target.value})}
-                    rows={4}
-                    className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-6 py-4 text-sm focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all resize-none"
-                    placeholder="e.g. Please use your Order Number as the payment reference. Send proof of payment to accounts@example.com"
-                  />
-                </div>
-              </div>
-
-              <div className="mt-10 pt-8 border-t border-zinc-100">
-                <button 
-                  onClick={handleSaveSettings}
-                  disabled={isSaving}
-                  className="w-full sm:w-auto bg-emerald-600 text-white px-10 py-4 rounded-2xl font-bold hover:bg-emerald-700 disabled:opacity-50 transition-all flex items-center justify-center"
-                >
-                  {isSaving ? (
-                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  ) : (
-                    <>
-                      <Save className="w-5 h-5 mr-2" /> Save Settings
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* User Edit Modal */}
@@ -1553,33 +1668,6 @@ export default function AdminPanel() {
                     type="number"
                     value={editingPlan.price}
                     onChange={(e) => setEditingPlan({...editingPlan, price: Number(e.target.value)})}
-                    className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Monthly Fee (R)</label>
-                  <input 
-                    type="number"
-                    value={editingPlan.monthlyFee}
-                    onChange={(e) => setEditingPlan({...editingPlan, monthlyFee: Number(e.target.value)})}
-                    className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Management Fee (R)</label>
-                  <input 
-                    type="number"
-                    value={editingPlan.managementFee}
-                    onChange={(e) => setEditingPlan({...editingPlan, managementFee: Number(e.target.value)})}
-                    className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Security Fee (R)</label>
-                  <input 
-                    type="number"
-                    value={editingPlan.securityFee}
-                    onChange={(e) => setEditingPlan({...editingPlan, securityFee: Number(e.target.value)})}
                     className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
                   />
                 </div>

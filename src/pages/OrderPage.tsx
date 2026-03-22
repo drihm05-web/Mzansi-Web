@@ -6,14 +6,13 @@ import { collection, addDoc, getDocs, query, where, doc, getDoc } from 'firebase
 import { db } from '../firebase';
 import { Shield, ArrowRight, CheckCircle2, Loader2, Tag, CreditCard, Copy, Check, Info, X, Zap, MessageSquare } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
-import { ProjectRequirements } from '../types';
+import { ProjectRequirements, Plan } from '../types';
 
 export default function OrderPage() {
   const { planId } = useParams();
   const { user } = useAuth();
   const navigate = useNavigate();
-  const plan = PLANS.find(p => p.id === planId);
-
+  const [plan, setPlan] = useState<Plan | null>(null);
   const [designBrief, setDesignBrief] = useState('');
   const [projectDetails, setProjectDetails] = useState<ProjectRequirements>({
     platform: 'E-commerce',
@@ -32,6 +31,24 @@ export default function OrderPage() {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
+    const fetchPlan = async () => {
+      if (!planId) return;
+      try {
+        const docRef = doc(db, 'plans', planId);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          setPlan({ id: docSnap.id, ...docSnap.data() } as Plan);
+        } else {
+          // Fallback to constants if not in Firestore yet
+          const fallback = PLANS.find(p => p.id === planId);
+          if (fallback) setPlan(fallback);
+        }
+      } catch (err) {
+        console.error('Error fetching plan:', err);
+      }
+    };
+    fetchPlan();
+
     const fetchSettings = async () => {
       const snap = await getDoc(doc(db, 'settings', 'payment'));
       if (snap.exists()) {
@@ -70,15 +87,17 @@ export default function OrderPage() {
 
   const handleOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    if (!user || !plan) return;
     setLoading(true);
     try {
-      // Generate AI Vision
+      // Generate AI Vision Text
       let aiVision = '';
+      let aiVisionImage = '';
       try {
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-        const model = "gemini-3-flash-preview";
-        const prompt = `As a senior web architect, generate a visionary project blueprint for a client who ordered the ${plan.name} plan.
+        
+        // Text Vision
+        const textPrompt = `As a senior web architect, generate a visionary project blueprint for a client who ordered the ${plan.name} plan.
         Requirements:
         - Platform: ${projectDetails.platform}
         - Payment Gateway: ${projectDetails.paymentGateway}
@@ -88,11 +107,36 @@ export default function OrderPage() {
         
         Provide a 3-sentence high-level technical vision that sounds futuristic and professional.`;
         
-        const result = await ai.models.generateContent({
-          model,
-          contents: prompt
+        const textResult = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: textPrompt
         });
-        aiVision = result.text || '';
+        aiVision = textResult.text || '';
+
+        // Image Vision
+        const imagePrompt = `A futuristic, high-tech architectural blueprint of a ${projectDetails.platform} website. 
+        Cyberpunk aesthetic, emerald green and dark zinc colors. 
+        Showing network nodes, security shields, and clean UI components. 
+        Professional, enterprise-grade, 3D isometric view.`;
+        
+        const imageResult = await ai.models.generateContent({
+          model: 'gemini-2.5-flash-image',
+          contents: {
+            parts: [{ text: imagePrompt }]
+          },
+          config: {
+            imageConfig: {
+              aspectRatio: "16:9",
+            }
+          }
+        });
+
+        for (const part of imageResult.candidates[0].content.parts) {
+          if (part.inlineData) {
+            aiVisionImage = `data:image/png;base64,${part.inlineData.data}`;
+            break;
+          }
+        }
       } catch (aiErr) {
         console.error('AI Generation failed:', aiErr);
         aiVision = 'Our architects are currently drafting your custom blueprint.';
@@ -104,9 +148,10 @@ export default function OrderPage() {
         status: 'pending',
         designBrief,
         amount: finalPrice,
-        monthlyFee: plan.monthlyFee + plan.managementFee + plan.securityFee,
+        monthlyFee: (plan.monthlyFee || 0) + (plan.managementFee || 0) + (plan.securityFee || 0),
         requirements: projectDetails,
         aiVision,
+        aiVisionImage,
         discountCode: discountApplied > 0 ? discountCode : null,
         createdAt: new Date().toISOString()
       });

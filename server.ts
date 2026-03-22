@@ -2,28 +2,77 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
+import nodemailer from "nodemailer";
+import admin from "firebase-admin";
+import fs from "fs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Initialize Firebase Admin
+const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+const firebaseConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+admin.initializeApp({
+  projectId: firebaseConfig.projectId,
+});
+
+const db = admin.firestore(firebaseConfig.firestoreDatabaseId);
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  // API routes go here if needed
   app.use(express.json());
 
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
   });
 
-  // Mock email sending endpoint
+  // Real email sending endpoint
   app.post("/api/send-email", async (req, res) => {
     const { to, subject, content } = req.body;
-    console.log(`Sending email to ${to}: ${subject}`);
-    // In a real app, you'd use a service like SendGrid here
-    // For now, we'll simulate a successful send
-    res.json({ success: true, message: "Email sent successfully" });
+    
+    try {
+      // Fetch email settings from Firestore
+      const settingsDoc = await db.collection('settings').doc('email').get();
+      
+      if (!settingsDoc.exists) {
+        return res.status(400).json({ success: false, message: "Email settings not configured in Admin Panel" });
+      }
+      
+      const settings = settingsDoc.data();
+      
+      if (!settings?.smtpHost || !settings?.smtpUser || !settings?.smtpPass) {
+        return res.status(400).json({ success: false, message: "SMTP settings are incomplete" });
+      }
+
+      // Create transporter
+      const transporter = nodemailer.createTransport({
+        host: settings.smtpHost,
+        port: parseInt(settings.smtpPort) || 587,
+        secure: settings.smtpPort === '465', // true for 465, false for other ports
+        auth: {
+          user: settings.smtpUser,
+          pass: settings.smtpPass,
+        },
+      });
+
+      // Send email
+      await transporter.sendMail({
+        from: `"${settings.senderName || 'Mzansi Web Solutions'}" <${settings.senderEmail || settings.smtpUser}>`,
+        to,
+        subject,
+        text: content,
+        html: content.replace(/\n/g, '<br>'), // Simple text to html conversion
+      });
+
+      console.log(`Email sent successfully to ${to}`);
+      res.json({ success: true, message: "Email sent successfully" });
+    } catch (error) {
+      console.error('Error sending email:', error);
+      res.status(500).json({ success: false, message: "Failed to send email", error: error instanceof Error ? error.message : String(error) });
+    }
   });
 
   // Mock inbound email simulation
